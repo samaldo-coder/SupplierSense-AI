@@ -24,3 +24,15 @@ def get_risk(supplier_id: str):
         "risk_score": risk_score,
         "tier": tier
     }
+from intelligence.forecast import run_forecast
+
+
+@app.get("/anomaly")
+def get_anomaly():
+    return {"anomaly_ratio": anomaly_score()}
+
+
+@app.get("/forecast")
+def get_forecast():
+    forecast = run_forecast()
+    return forecast.to_dict(orient="records")

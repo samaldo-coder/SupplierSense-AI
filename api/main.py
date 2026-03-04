@@ -8,7 +8,9 @@ app = FastAPI()
 @app.get("/")
 def root():
     return {"message": "SupplierSense Backend API running"}
-
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "SupplierSense Backend"}
 @app.get("/risk/{supplier_id}")
 def get_risk(supplier_id: str):
     anomaly_ratio = anomaly_score()

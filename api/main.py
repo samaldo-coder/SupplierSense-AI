@@ -33,3 +33,21 @@ def get_anomaly():
 def get_forecast():
     forecast = run_forecast()
     return forecast.to_dict(orient="records")
+@app.get("/supplier/{supplier_id}")
+def analyze_supplier(supplier_id: str):
+    anomaly_ratio = anomaly_score()
+    forecast = run_forecast()
+
+    risk_score, tier = compute_risk(
+        financial_status="YELLOW",
+        anomaly_ratio=anomaly_ratio,
+        forecast_trend="UP"
+    )
+
+    return {
+        "supplier_id": supplier_id,
+        "risk_score": risk_score,
+        "tier": tier,
+        "anomaly_ratio": anomaly_ratio,
+        "forecast_preview": forecast.head(5).to_dict(orient="records")
+    }

@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from intelligence.anomaly import anomaly_score
+from intelligence.forecast import run_forecast
 from intelligence.risk_score import compute_risk
 
 app = FastAPI()
@@ -10,7 +11,6 @@ def root():
 
 @app.get("/risk/{supplier_id}")
 def get_risk(supplier_id: str):
-
     anomaly_ratio = anomaly_score()
 
     risk_score, tier = compute_risk(
@@ -24,13 +24,10 @@ def get_risk(supplier_id: str):
         "risk_score": risk_score,
         "tier": tier
     }
-from intelligence.forecast import run_forecast
-
 
 @app.get("/anomaly")
 def get_anomaly():
     return {"anomaly_ratio": anomaly_score()}
-
 
 @app.get("/forecast")
 def get_forecast():

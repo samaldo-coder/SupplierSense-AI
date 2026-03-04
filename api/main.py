@@ -7,7 +7,7 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"message": "Supplier Risk Engine Running"}
+    return {"message": "SupplierSense Backend API running"}
 
 @app.get("/risk/{supplier_id}")
 def get_risk(supplier_id: str):

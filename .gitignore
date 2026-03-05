@@ -11,7 +11,7 @@ build/
 .pytest_cache/
 .mypy_cache/
 
-# Node / Frontend
+# Node / Frontend / MCP
 node_modules/
 dist/
 dist-ssr/
@@ -21,6 +21,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 package-lock.json
+mcp/package-lock.json
 *.local
 
 # IDE

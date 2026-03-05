@@ -1,0 +1,14 @@
+{
+  "name": "supplyguard-mcp-servers",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP servers for SupplyGuard AI - ERP, Audit, and Comms",
+  "scripts": {
+    "erp": "node erp-server.js",
+    "audit": "node audit-server.js",
+    "comms": "node comms-server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  }
+}

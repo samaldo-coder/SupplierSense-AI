@@ -1,0 +1,8 @@
+{
+  "event_id": "c3000000-0000-0000-0000-000000000003",
+  "supplier_id": "a1000000-0000-0000-0000-000000000004",
+  "event_type": "FINANCIAL_FLAG",
+  "delay_days": 4,
+  "description": "DeltaSteel flagged for Q3 cash flow concerns. Delivery delay possible.",
+  "severity": "HIGH"
+}

@@ -1,0 +1,8 @@
+{
+  "event_id": "c3000000-0000-0000-0000-000000000001",
+  "supplier_id": "a1000000-0000-0000-0000-000000000001",
+  "event_type": "DELIVERY_MISS",
+  "delay_days": 9,
+  "description": "Facility fire at AlphaForge Monterrey plant. 9-day delivery delay confirmed.",
+  "severity": "CRITICAL"
+}

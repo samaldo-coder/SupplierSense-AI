@@ -1,0 +1,26 @@
+# SupplyGuard AI — Python dependencies
+# Covers: Agent layer (P3), Data/ML layer (P5), Backend API
+
+# ─── Agent Layer (P3) ────────────────────────────
+crewai>=1.10.0
+crewai-tools>=1.10.0
+openai>=2.20.0
+httpx>=0.28.0
+tenacity>=9.0.0
+python-dotenv>=1.0.0
+
+# ─── Shared ──────────────────────────────────────
+pydantic>=2.10.0
+fastapi>=0.115.0
+uvicorn>=0.34.0
+
+# ─── Testing ─────────────────────────────────────
+pytest>=9.0.0
+
+# ─── Data/ML Layer (P5) ─────────────────────────
+numpy>=2.0.0
+pandas>=2.0.0
+scikit-learn>=1.8.0
+scipy>=1.15.0
+statsforecast>=2.0.0
+statsmodels>=0.14.0

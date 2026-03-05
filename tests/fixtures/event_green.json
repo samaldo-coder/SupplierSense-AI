@@ -1,0 +1,8 @@
+{
+  "event_id": "c3000000-0000-0000-0000-000000000002",
+  "supplier_id": "a1000000-0000-0000-0000-000000000006",
+  "event_type": "DELIVERY_MISS",
+  "delay_days": 1,
+  "description": "Minor 1-day delay within SLA buffer. No factory impact.",
+  "severity": "LOW"
+}

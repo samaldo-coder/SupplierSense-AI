@@ -1,0 +1,193 @@
+{
+  "event_id": "c3000000-0000-0000-0000-000000000002",
+  "run_id": "RUN-2FBCD82AFD62",
+  "intake": {
+    "supplier_id": "a1000000-0000-0000-0000-000000000006",
+    "event_type": "DELIVERY_MISS",
+    "delay_days": 1,
+    "raw_summary": "DELIVERY_MISS event for supplier ZetaAlloy Solutions: Minor 1-day delay within SLA buffer. No factory impact.",
+    "supplier_profile": {
+      "supplier_id": "a1000000-0000-0000-0000-000000000006",
+      "supplier_name": "ZetaAlloy Solutions",
+      "country": "USA",
+      "tier": 1,
+      "financial_health": "GREEN",
+      "lead_time_days": 4,
+      "unit_cost": 98.0,
+      "is_active": true,
+      "quality_cert_type": "IATF 16949",
+      "quality_cert_expiry": "2028-01-15"
+    }
+  },
+  "quality": {
+    "cert_valid": true,
+    "cert_expiry": "2028-01-15",
+    "cert_type": "IATF 16949",
+    "defect_trend": "STABLE",
+    "quality_sub_score": 4.29
+  },
+  "history": {
+    "avg_delay_30d": 1.52,
+    "forecast_trend": "IMPROVING",
+    "forecast_confidence": 0.9221,
+    "anomaly_votes": 0,
+    "anomaly_flagged": false,
+    "risk_index_score": 8.42
+  },
+  "decision": {
+    "action": "APPROVE",
+    "recommended_supplier_id": "a1000000-0000-0000-0000-000000000007",
+    "composite_score": 4.71,
+    "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000007 has the best combined score for lead time, cost, and certification status.",
+    "hitl_required": false,
+    "hitl_actor": null
+  },
+  "executor": {
+    "po_id": "PO-A7D914D0",
+    "confirmation_timestamp": "2026-03-04T22:20:59.687386+00:00",
+    "notifications_sent": [
+      "procurement: sent"
+    ]
+  },
+  "audit_entries": [
+    {
+      "run_id": "RUN-2FBCD82AFD62",
+      "agent_name": "intake_agent",
+      "inputs": {
+        "event_id": "c3000000-0000-0000-0000-000000000002",
+        "supplier_id": "a1000000-0000-0000-0000-000000000006",
+        "event_type": "DELIVERY_MISS",
+        "delay_days": 1,
+        "description": "Minor 1-day delay within SLA buffer. No factory impact.",
+        "severity": "LOW",
+        "created_at": null
+      },
+      "outputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000006",
+        "event_type": "DELIVERY_MISS",
+        "delay_days": 1,
+        "raw_summary": "DELIVERY_MISS event for supplier ZetaAlloy Solutions: Minor 1-day delay within SLA buffer. No factory impact.",
+        "supplier_profile": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000006",
+          "supplier_name": "ZetaAlloy Solutions",
+          "country": "USA",
+          "tier": 1,
+          "financial_health": "GREEN",
+          "lead_time_days": 4,
+          "unit_cost": 98.0,
+          "is_active": true,
+          "quality_cert_type": "IATF 16949",
+          "quality_cert_expiry": "2028-01-15"
+        }
+      },
+      "confidence": 0.95,
+      "rationale": "DELIVERY_MISS event for supplier ZetaAlloy Solutions: Minor 1-day delay within SLA buffer. No factory impact.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:20:58.991737+00:00",
+      "entry_id": "ca30a8b2-c11a-48ec-b51d-31d8b980d2c0"
+    },
+    {
+      "run_id": "RUN-2FBCD82AFD62",
+      "agent_name": "quality_agent",
+      "inputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000006",
+        "delay_days": 1
+      },
+      "outputs": {
+        "cert_valid": true,
+        "cert_expiry": "2028-01-15",
+        "cert_type": "IATF 16949",
+        "defect_trend": "STABLE",
+        "quality_sub_score": 4.29
+      },
+      "confidence": 0.9,
+      "rationale": "Quality score 4.3/100. Cert valid. Defect trend: STABLE.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:20:59.108289+00:00",
+      "entry_id": "0e440b5b-8833-4730-a904-6ca9aad909f8"
+    },
+    {
+      "run_id": "RUN-2FBCD82AFD62",
+      "agent_name": "supplier_history_agent",
+      "inputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000006",
+        "forecast_raw": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000006",
+          "forecast_date": "2026-03-04",
+          "predicted_delay": 1.52,
+          "lower_ci": 0.97,
+          "upper_ci": 2.06,
+          "model_aic": 0.0
+        },
+        "anomaly_raw": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000006",
+          "date": "2026-03-04",
+          "anomaly_flag": false,
+          "votes": 0,
+          "zscore_val": 0.2522,
+          "mad_val": 0.2023,
+          "percentile_val": 0.5722
+        }
+      },
+      "outputs": {
+        "avg_delay_30d": 1.52,
+        "forecast_trend": "IMPROVING",
+        "forecast_confidence": 0.9221,
+        "anomaly_votes": 0,
+        "anomaly_flagged": false,
+        "risk_index_score": 8.42
+      },
+      "confidence": 0.9221428571428572,
+      "rationale": "Forecast trend: IMPROVING (confidence: 0.92). Anomaly votes: 0/3. Risk index: 8.4/100.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:20:59.260278+00:00",
+      "entry_id": "ca381dc8-dfc5-4241-8de7-38784a06c6d9"
+    },
+    {
+      "run_id": "RUN-2FBCD82AFD62",
+      "agent_name": "decision_agent",
+      "inputs": {
+        "composite_score": 4.711999999999999,
+        "action": "APPROVE",
+        "hitl_required": false,
+        "avl_count": 2
+      },
+      "outputs": {
+        "action": "APPROVE",
+        "recommended_supplier_id": "a1000000-0000-0000-0000-000000000007",
+        "composite_score": 4.71,
+        "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000007 has the best combined score for lead time, cost, and certification status.",
+        "hitl_required": false,
+        "hitl_actor": null
+      },
+      "confidence": 0.85,
+      "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000007 has the best combined score for lead time, cost, and certification status.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:20:59.439044+00:00",
+      "entry_id": "34756688-32f6-47ac-913d-a6da465742f4"
+    },
+    {
+      "run_id": "RUN-2FBCD82AFD62",
+      "agent_name": "executor_agent",
+      "inputs": {
+        "recommended_supplier_id": "a1000000-0000-0000-0000-000000000007",
+        "approved_by": "auto_approved",
+        "part_id": "b2000000-0000-0000-0000-000000000006"
+      },
+      "outputs": {
+        "po_id": "PO-A7D914D0",
+        "confirmation_timestamp": "2026-03-04T22:20:59.687386+00:00",
+        "notifications_sent": [
+          "procurement: sent"
+        ]
+      },
+      "confidence": 1.0,
+      "rationale": "PO PO-A7D914D0 created and confirmed at 2026-03-04T22:20:59.687386+00:00.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:20:59.687443+00:00",
+      "entry_id": "aeedcb6e-ab86-4ab2-b57b-496cd8967282"
+    }
+  ],
+  "error": null,
+  "paused_for_hitl": false
+}

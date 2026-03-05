@@ -1,0 +1,166 @@
+{
+  "event_id": "c3000000-0000-0000-0000-000000000001",
+  "run_id": "RUN-EB0ACA2C8E5C",
+  "intake": {
+    "supplier_id": "a1000000-0000-0000-0000-000000000001",
+    "event_type": "DELIVERY_MISS",
+    "delay_days": 9,
+    "raw_summary": "DELIVERY_MISS event for supplier AlphaForge Industries: Facility fire at AlphaForge Monterrey plant. 9-day delivery delay confirmed.",
+    "supplier_profile": {
+      "supplier_id": "a1000000-0000-0000-0000-000000000001",
+      "supplier_name": "AlphaForge Industries",
+      "country": "Mexico",
+      "tier": 1,
+      "financial_health": "RED",
+      "lead_time_days": 12,
+      "unit_cost": 85.5,
+      "is_active": true,
+      "quality_cert_type": "ISO 9001",
+      "quality_cert_expiry": "2025-06-15"
+    }
+  },
+  "quality": {
+    "cert_valid": false,
+    "cert_expiry": "2025-06-15",
+    "cert_type": "ISO 9001",
+    "defect_trend": "STABLE",
+    "quality_sub_score": 78.57
+  },
+  "history": {
+    "avg_delay_30d": 9.03,
+    "forecast_trend": "WORSENING",
+    "forecast_confidence": 0.1586,
+    "anomaly_votes": 0,
+    "anomaly_flagged": false,
+    "risk_index_score": 61.36
+  },
+  "decision": {
+    "action": "ESCALATE_TO_VP",
+    "recommended_supplier_id": "a1000000-0000-0000-0000-000000000002",
+    "composite_score": 57.74,
+    "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000002 has the best combined score for lead time, cost, and certification status.",
+    "hitl_required": true,
+    "hitl_actor": null
+  },
+  "executor": null,
+  "audit_entries": [
+    {
+      "run_id": "RUN-EB0ACA2C8E5C",
+      "agent_name": "intake_agent",
+      "inputs": {
+        "event_id": "c3000000-0000-0000-0000-000000000001",
+        "supplier_id": "a1000000-0000-0000-0000-000000000001",
+        "event_type": "DELIVERY_MISS",
+        "delay_days": 9,
+        "description": "Facility fire at AlphaForge Monterrey plant. 9-day delivery delay confirmed.",
+        "severity": "CRITICAL",
+        "created_at": null
+      },
+      "outputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000001",
+        "event_type": "DELIVERY_MISS",
+        "delay_days": 9,
+        "raw_summary": "DELIVERY_MISS event for supplier AlphaForge Industries: Facility fire at AlphaForge Monterrey plant. 9-day delivery delay confirmed.",
+        "supplier_profile": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000001",
+          "supplier_name": "AlphaForge Industries",
+          "country": "Mexico",
+          "tier": 1,
+          "financial_health": "RED",
+          "lead_time_days": 12,
+          "unit_cost": 85.5,
+          "is_active": true,
+          "quality_cert_type": "ISO 9001",
+          "quality_cert_expiry": "2025-06-15"
+        }
+      },
+      "confidence": 0.95,
+      "rationale": "DELIVERY_MISS event for supplier AlphaForge Industries: Facility fire at AlphaForge Monterrey plant. 9-day delivery delay confirmed.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:21:10.252476+00:00",
+      "entry_id": "1d1958a1-429b-4136-8aa0-d87b2d684da0"
+    },
+    {
+      "run_id": "RUN-EB0ACA2C8E5C",
+      "agent_name": "quality_agent",
+      "inputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000001",
+        "delay_days": 9
+      },
+      "outputs": {
+        "cert_valid": false,
+        "cert_expiry": "2025-06-15",
+        "cert_type": "ISO 9001",
+        "defect_trend": "STABLE",
+        "quality_sub_score": 78.57
+      },
+      "confidence": 0.9,
+      "rationale": "Quality score 78.6/100. Cert EXPIRED/MISSING. Defect trend: STABLE.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:21:10.367458+00:00",
+      "entry_id": "28f2110e-a0da-4e55-92cf-13db6f26b8a7"
+    },
+    {
+      "run_id": "RUN-EB0ACA2C8E5C",
+      "agent_name": "supplier_history_agent",
+      "inputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000001",
+        "forecast_raw": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000001",
+          "forecast_date": "2026-03-04",
+          "predicted_delay": 9.03,
+          "lower_ci": 3.14,
+          "upper_ci": 14.92,
+          "model_aic": 0.0
+        },
+        "anomaly_raw": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000001",
+          "date": "2026-03-04",
+          "anomaly_flag": false,
+          "votes": 0,
+          "zscore_val": 1.1551,
+          "mad_val": 1.1808,
+          "percentile_val": 0.8722
+        }
+      },
+      "outputs": {
+        "avg_delay_30d": 9.03,
+        "forecast_trend": "WORSENING",
+        "forecast_confidence": 0.1586,
+        "anomaly_votes": 0,
+        "anomaly_flagged": false,
+        "risk_index_score": 61.36
+      },
+      "confidence": 0.15857142857142859,
+      "rationale": "Forecast trend: WORSENING (confidence: 0.16). Anomaly votes: 0/3. Risk index: 61.4/100.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:21:10.480000+00:00",
+      "entry_id": "198aea85-3921-4c06-abca-1a85691bbdfe"
+    },
+    {
+      "run_id": "RUN-EB0ACA2C8E5C",
+      "agent_name": "decision_agent",
+      "inputs": {
+        "composite_score": 57.738499999999995,
+        "action": "ESCALATE_TO_VP",
+        "hitl_required": true,
+        "avl_count": 3
+      },
+      "outputs": {
+        "action": "ESCALATE_TO_VP",
+        "recommended_supplier_id": "a1000000-0000-0000-0000-000000000002",
+        "composite_score": 57.74,
+        "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000002 has the best combined score for lead time, cost, and certification status.",
+        "hitl_required": true,
+        "hitl_actor": null
+      },
+      "confidence": 0.85,
+      "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000002 has the best combined score for lead time, cost, and certification status.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:21:10.588345+00:00",
+      "entry_id": "5831e3ca-b8d6-4784-bd31-bec161e97b38"
+    }
+  ],
+  "error": null,
+  "paused_for_hitl": true
+}

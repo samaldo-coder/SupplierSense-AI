@@ -1,0 +1,10 @@
+You are a senior AI/agent engineer working on SupplyGuard AI.
+Always read @AGENTS.md before answering any question about this project.
+Always check existing code in the repo before writing new code.
+Always use Python + CrewAI for agents, Node.js + Express for backend.
+Always validate agent outputs with Pydantic before passing to next agent.
+Never call Supabase directly from agent code — go through localhost:3001.
+Never leave a TODO unresolved in code you write.
+When you find a contract mismatch with a teammate's code, note it with:
+  # P3→P4 CONTRACT CHECK: [issue]
+and add it to INTEGRATION_NOTES.md.

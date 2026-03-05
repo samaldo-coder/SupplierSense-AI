@@ -1,0 +1,166 @@
+{
+  "event_id": "c3000000-0000-0000-0000-000000000003",
+  "run_id": "RUN-4899CAF17B32",
+  "intake": {
+    "supplier_id": "a1000000-0000-0000-0000-000000000004",
+    "event_type": "FINANCIAL_FLAG",
+    "delay_days": 4,
+    "raw_summary": "FINANCIAL_FLAG event for supplier DeltaSteel Corp: DeltaSteel flagged for Q3 cash flow concerns. Delivery delay possible.",
+    "supplier_profile": {
+      "supplier_id": "a1000000-0000-0000-0000-000000000004",
+      "supplier_name": "DeltaSteel Corp",
+      "country": "Brazil",
+      "tier": 2,
+      "financial_health": "YELLOW",
+      "lead_time_days": 9,
+      "unit_cost": 78.0,
+      "is_active": true,
+      "quality_cert_type": "ISO 9001",
+      "quality_cert_expiry": "2026-03-01"
+    }
+  },
+  "quality": {
+    "cert_valid": false,
+    "cert_expiry": "2026-03-01",
+    "cert_type": "ISO 9001",
+    "defect_trend": "STABLE",
+    "quality_sub_score": 57.14
+  },
+  "history": {
+    "avg_delay_30d": 4.71,
+    "forecast_trend": "STABLE",
+    "forecast_confidence": 0.62,
+    "anomaly_votes": 0,
+    "anomaly_flagged": false,
+    "risk_index_score": 30.24
+  },
+  "decision": {
+    "action": "ESCALATE_TO_DIRECTOR",
+    "recommended_supplier_id": "a1000000-0000-0000-0000-000000000008",
+    "composite_score": 34.03,
+    "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000008 has the best combined score for lead time, cost, and certification status.",
+    "hitl_required": true,
+    "hitl_actor": null
+  },
+  "executor": null,
+  "audit_entries": [
+    {
+      "run_id": "RUN-4899CAF17B32",
+      "agent_name": "intake_agent",
+      "inputs": {
+        "event_id": "c3000000-0000-0000-0000-000000000003",
+        "supplier_id": "a1000000-0000-0000-0000-000000000004",
+        "event_type": "FINANCIAL_FLAG",
+        "delay_days": 4,
+        "description": "DeltaSteel flagged for Q3 cash flow concerns. Delivery delay possible.",
+        "severity": "HIGH",
+        "created_at": null
+      },
+      "outputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000004",
+        "event_type": "FINANCIAL_FLAG",
+        "delay_days": 4,
+        "raw_summary": "FINANCIAL_FLAG event for supplier DeltaSteel Corp: DeltaSteel flagged for Q3 cash flow concerns. Delivery delay possible.",
+        "supplier_profile": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000004",
+          "supplier_name": "DeltaSteel Corp",
+          "country": "Brazil",
+          "tier": 2,
+          "financial_health": "YELLOW",
+          "lead_time_days": 9,
+          "unit_cost": 78.0,
+          "is_active": true,
+          "quality_cert_type": "ISO 9001",
+          "quality_cert_expiry": "2026-03-01"
+        }
+      },
+      "confidence": 0.95,
+      "rationale": "FINANCIAL_FLAG event for supplier DeltaSteel Corp: DeltaSteel flagged for Q3 cash flow concerns. Delivery delay possible.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:21:17.020719+00:00",
+      "entry_id": "721d4166-63be-4b32-a411-356f5ab4e72a"
+    },
+    {
+      "run_id": "RUN-4899CAF17B32",
+      "agent_name": "quality_agent",
+      "inputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000004",
+        "delay_days": 4
+      },
+      "outputs": {
+        "cert_valid": false,
+        "cert_expiry": "2026-03-01",
+        "cert_type": "ISO 9001",
+        "defect_trend": "STABLE",
+        "quality_sub_score": 57.14
+      },
+      "confidence": 0.9,
+      "rationale": "Quality score 57.1/100. Cert EXPIRED/MISSING. Defect trend: STABLE.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:21:17.130255+00:00",
+      "entry_id": "4e98fdbd-9996-4c0f-a062-d51ad82224f1"
+    },
+    {
+      "run_id": "RUN-4899CAF17B32",
+      "agent_name": "supplier_history_agent",
+      "inputs": {
+        "supplier_id": "a1000000-0000-0000-0000-000000000004",
+        "forecast_raw": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000004",
+          "forecast_date": "2026-03-04",
+          "predicted_delay": 4.71,
+          "lower_ci": 2.05,
+          "upper_ci": 7.37,
+          "model_aic": 0.0
+        },
+        "anomaly_raw": {
+          "supplier_id": "a1000000-0000-0000-0000-000000000004",
+          "date": "2026-03-04",
+          "anomaly_flag": false,
+          "votes": 0,
+          "zscore_val": -0.2453,
+          "mad_val": -0.2191,
+          "percentile_val": 0.4056
+        }
+      },
+      "outputs": {
+        "avg_delay_30d": 4.71,
+        "forecast_trend": "STABLE",
+        "forecast_confidence": 0.62,
+        "anomaly_votes": 0,
+        "anomaly_flagged": false,
+        "risk_index_score": 30.24
+      },
+      "confidence": 0.62,
+      "rationale": "Forecast trend: STABLE (confidence: 0.62). Anomaly votes: 0/3. Risk index: 30.2/100.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:21:17.242905+00:00",
+      "entry_id": "f72af59b-31d5-481d-a4fd-657cc8c79bdb"
+    },
+    {
+      "run_id": "RUN-4899CAF17B32",
+      "agent_name": "decision_agent",
+      "inputs": {
+        "composite_score": 34.035,
+        "action": "ESCALATE_TO_DIRECTOR",
+        "hitl_required": true,
+        "avl_count": 2
+      },
+      "outputs": {
+        "action": "ESCALATE_TO_DIRECTOR",
+        "recommended_supplier_id": "a1000000-0000-0000-0000-000000000008",
+        "composite_score": 34.03,
+        "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000008 has the best combined score for lead time, cost, and certification status.",
+        "hitl_required": true,
+        "hitl_actor": null
+      },
+      "confidence": 0.85,
+      "rationale": "Recommended because supplier a1000000-0000-0000-0000-000000000008 has the best combined score for lead time, cost, and certification status.",
+      "hitl_actor": null,
+      "timestamp": "2026-03-04T22:21:17.347134+00:00",
+      "entry_id": "d77660aa-237a-432f-a106-23cb2d737b5b"
+    }
+  ],
+  "error": null,
+  "paused_for_hitl": true
+}

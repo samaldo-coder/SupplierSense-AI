@@ -6,7 +6,7 @@ import LoginPage from './components/auth/LoginPage'
 import DirectorDashboard from './components/dashboard/DirectorDashboard'
 import QCManagerDashboard from './components/dashboard/QCManagerDashboard'
 import WarehouseDashboard from './components/dashboard/WarehouseDashboard'
-import { ToastContainer, useToast } from './components/ui/Toast'
+import { ToastProvider, useGlobalToast } from './components/ui/Toast'
 
 type UserRole = 'procurement' | 'qc_manager' | 'director'
 
@@ -28,13 +28,13 @@ function DashboardRouter({ role }: { role: UserRole }) {
   }
 }
 
-export default function App() {
+function AppInner() {
   const [userRole, setUserRole] = useState<UserRole | null>(() => {
     const saved = localStorage.getItem('supplyguard_role')
     return saved ? (saved as UserRole) : null
   })
 
-  const { toasts, addToast, removeToast } = useToast()
+  const { addToast } = useGlobalToast()
 
   const handleLogin = useCallback(
     (role: string) => {
@@ -59,7 +59,6 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950">
         <LoginPage onLogin={handleLogin} />
-        <ToastContainer toasts={toasts} onRemove={removeToast} />
       </div>
     )
   }
@@ -106,8 +105,15 @@ export default function App() {
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
-        <ToastContainer toasts={toasts} onRemove={removeToast} />
       </div>
     </BrowserRouter>
+  )
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
   )
 }

@@ -1,16 +1,20 @@
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Package, 
   TrendingUp, 
   Clock, 
   CheckCircle, 
   AlertTriangle,
-  Save
+  Save,
+  Zap,
+  ArrowRight
 } from 'lucide-react'
-import { getSuppliers, getEvents, getDashboardStats, type Supplier, type SupplierEvent, type DashboardStats } from '../../api'
+import { getSuppliers, getEvents, getDashboardStats, createEvent, triggerPipeline, type Supplier, type SupplierEvent, type DashboardStats, type PipelineResult } from '../../api'
+import { useGlobalToast } from '../ui/Toast'
 
 export default function WarehouseDashboard() {
+  const toast = useGlobalToast()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [events, setEvents] = useState<SupplierEvent[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -29,25 +33,39 @@ export default function WarehouseDashboard() {
   
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formProgress, setFormProgress] = useState(0)
-  const [focusedField, setFocusedField] = useState('')
+
+  // Disruption report state
+  const [disruptionForm, setDisruptionForm] = useState({
+    supplier_id: '',
+    event_type: 'DELIVERY_MISS' as 'DELIVERY_MISS' | 'FINANCIAL_FLAG' | 'QUALITY_HOLD',
+    delay_days: 3,
+    severity: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
+    description: '',
+  })
+  const [isRunningPipeline, setIsRunningPipeline] = useState(false)
+  const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null)
+  const [selectedTab, setSelectedTab] = useState<'shipment' | 'disruption'>('disruption')
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [s, e, st] = await Promise.all([
+        getSuppliers().catch(() => []),
+        getEvents().catch(() => []),
+        getDashboardStats().catch(() => null),
+      ])
+      setSuppliers(s)
+      setEvents(e)
+      setStats(st)
+    } catch {
+      console.warn('Backend offline')
+    }
+  }, [])
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [s, e, st] = await Promise.all([
-          getSuppliers().catch(() => []),
-          getEvents().catch(() => []),
-          getDashboardStats().catch(() => null),
-        ])
-        setSuppliers(s)
-        setEvents(e)
-        setStats(st)
-      } catch {
-        console.warn('Backend offline')
-      }
-    }
-    load()
-  }, [])
+    fetchData()
+    const interval = setInterval(fetchData, 5000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   useEffect(() => {
     const requiredFields = ['supplier', 'poNumber', 'partNumber', 'quantity']
@@ -66,6 +84,48 @@ export default function WarehouseDashboard() {
       defectsFound: '', totalUnits: '', notes: ''
     })
     setIsSubmitting(false)
+    toast.success('Shipment data logged successfully.')
+  }
+
+  const handleReportDisruption = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!disruptionForm.supplier_id) return
+
+    setIsRunningPipeline(true)
+    setPipelineResult(null)
+
+    try {
+      // 1. Create the event in the backend
+      const event = await createEvent({
+        supplier_id: disruptionForm.supplier_id,
+        event_type: disruptionForm.event_type,
+        delay_days: disruptionForm.delay_days,
+        severity: disruptionForm.severity,
+        description: disruptionForm.description || `${disruptionForm.event_type} reported for supplier`,
+      })
+
+      // 2. Trigger the AI pipeline
+      const result = await triggerPipeline(event.event_id)
+      setPipelineResult(result)
+
+      // 3. Show toast based on result
+      if (result.status === 'completed') {
+        toast.success('Pipeline completed — auto-approved, PO created.')
+      } else if (result.status === 'paused_for_hitl') {
+        toast.warning('Pipeline paused — awaiting Director approval.')
+      } else if (result.status === 'error') {
+        toast.error(`Pipeline error: ${result.error ?? 'unknown'}`)
+      }
+
+      // 4. Refresh data
+      await fetchData()
+    } catch (err) {
+      console.error('Pipeline trigger failed:', err)
+      setPipelineResult({ status: 'error', error: 'Failed to reach backend. Is it running?' })
+      toast.error('Pipeline trigger failed — is the backend running?')
+    } finally {
+      setIsRunningPipeline(false)
+    }
   }
 
   const recentEvents = events.slice(0, 5)
@@ -100,12 +160,209 @@ export default function WarehouseDashboard() {
         </div>
       )}
 
+      {/* Tab Switcher */}
+      <div className="flex space-x-1 bg-white/5 p-1 rounded-lg">
+        {[
+          { id: 'disruption' as const, label: 'Report Disruption', icon: Zap },
+          { id: 'shipment' as const, label: 'Log Shipment', icon: Package },
+        ].map(tab => {
+          const Icon = tab.icon
+          return (
+            <motion.button
+              key={tab.id}
+              onClick={() => setSelectedTab(tab.id)}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                selectedTab === tab.id
+                  ? 'bg-white/10 text-white border border-white/20'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </motion.button>
+          )
+        })}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="lg:col-span-2">
+
+          {/* ═══ REPORT DISRUPTION TAB ═══ */}
+          {selectedTab === 'disruption' && (
+          <div className="glass-card p-6">
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-10 h-10 bg-linear-to-r from-red-500 to-orange-500 rounded-lg flex items-center justify-center">
+                <Zap className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Report Supplier Disruption</h2>
+                <p className="text-sm text-gray-400">Submit a disruption event — the AI pipeline processes it automatically</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleReportDisruption} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Supplier *</label>
+                  <select
+                    value={disruptionForm.supplier_id}
+                    onChange={e => setDisruptionForm({...disruptionForm, supplier_id: e.target.value})}
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:border-red-400 focus:ring-1 focus:ring-red-400"
+                    required
+                  >
+                    <option value="">Select Supplier</option>
+                    {suppliers.map(s => (
+                      <option key={s.supplier_id} value={s.supplier_id} className="bg-slate-800">
+                        {s.supplier_name} ({s.financial_health})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Event Type *</label>
+                  <select
+                    value={disruptionForm.event_type}
+                    onChange={e => setDisruptionForm({...disruptionForm, event_type: e.target.value as any})}
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:border-red-400"
+                  >
+                    <option value="DELIVERY_MISS" className="bg-slate-800">Delivery Miss</option>
+                    <option value="FINANCIAL_FLAG" className="bg-slate-800">Financial Flag</option>
+                    <option value="QUALITY_HOLD" className="bg-slate-800">Quality Hold</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Delay (days) *</label>
+                  <input
+                    type="number"
+                    value={disruptionForm.delay_days}
+                    onChange={e => setDisruptionForm({...disruptionForm, delay_days: parseInt(e.target.value) || 0})}
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:border-red-400"
+                    min={0} max={30}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Severity *</label>
+                  <select
+                    value={disruptionForm.severity}
+                    onChange={e => setDisruptionForm({...disruptionForm, severity: e.target.value as any})}
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white focus:border-red-400"
+                  >
+                    <option value="LOW" className="bg-slate-800">LOW</option>
+                    <option value="MEDIUM" className="bg-slate-800">MEDIUM</option>
+                    <option value="HIGH" className="bg-slate-800">HIGH</option>
+                    <option value="CRITICAL" className="bg-slate-800">CRITICAL</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                <textarea
+                  value={disruptionForm.description}
+                  onChange={e => setDisruptionForm({...disruptionForm, description: e.target.value})}
+                  placeholder="Describe the disruption (e.g. facility fire, port congestion, quality defect)..."
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-red-400"
+                  rows={2}
+                />
+              </div>
+
+              <motion.button
+                type="submit"
+                disabled={isRunningPipeline || !disruptionForm.supplier_id}
+                className="w-full py-4 bg-linear-to-r from-red-600 to-orange-600 text-white rounded-lg font-bold text-lg hover:from-red-700 hover:to-orange-700 disabled:opacity-50 shadow-lg shadow-red-500/25"
+                whileHover={{ scale: isRunningPipeline ? 1 : 1.02 }}
+                whileTap={{ scale: isRunningPipeline ? 1 : 0.98 }}
+              >
+                {isRunningPipeline ? (
+                  <div className="flex items-center justify-center space-x-3">
+                    <motion.div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full" animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} />
+                    <span>AI Pipeline Processing...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center space-x-3">
+                    <Zap className="w-5 h-5" />
+                    <span>Report Disruption & Run AI Pipeline</span>
+                    <ArrowRight className="w-5 h-5" />
+                  </div>
+                )}
+              </motion.button>
+            </form>
+
+            {/* Pipeline Result */}
+            <AnimatePresence>
+              {pipelineResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className={`mt-6 p-4 rounded-lg border ${
+                    pipelineResult.error
+                      ? 'bg-red-500/10 border-red-500/30'
+                      : pipelineResult.paused_for_hitl
+                      ? 'bg-amber-500/10 border-amber-500/30'
+                      : 'bg-emerald-500/10 border-emerald-500/30'
+                  }`}
+                >
+                  <div className="flex items-start space-x-3">
+                    {pipelineResult.error ? (
+                      <AlertTriangle className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
+                    ) : pipelineResult.paused_for_hitl ? (
+                      <Clock className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <h4 className={`font-semibold ${
+                        pipelineResult.error ? 'text-red-300' :
+                        pipelineResult.paused_for_hitl ? 'text-amber-300' : 'text-emerald-300'
+                      }`}>
+                        {pipelineResult.error ? 'Pipeline Error' :
+                         pipelineResult.paused_for_hitl ? 'Escalated — Awaiting Director Approval' :
+                         'Auto-Approved & Executed'}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+                        {pipelineResult.run_id && (
+                          <div><span className="text-gray-400">Run ID:</span> <span className="text-white font-mono">{pipelineResult.run_id.slice(0, 16)}...</span></div>
+                        )}
+                        {pipelineResult.composite_score != null && (
+                          <div><span className="text-gray-400">Risk Score:</span> <span className={`font-bold ${
+                            pipelineResult.composite_score >= 70 ? 'text-red-400' :
+                            pipelineResult.composite_score >= 40 ? 'text-amber-400' : 'text-emerald-400'
+                          }`}>{pipelineResult.composite_score.toFixed(1)}/100</span></div>
+                        )}
+                        {pipelineResult.action && (
+                          <div><span className="text-gray-400">Action:</span> <span className="text-white">{pipelineResult.action}</span></div>
+                        )}
+                        {pipelineResult.po_id && (
+                          <div><span className="text-gray-400">PO:</span> <span className="text-emerald-400 font-mono">{pipelineResult.po_id}</span></div>
+                        )}
+                        {pipelineResult.audit_entries != null && (
+                          <div><span className="text-gray-400">Agents Run:</span> <span className="text-white">{pipelineResult.audit_entries}/5</span></div>
+                        )}
+                        {pipelineResult.error && (
+                          <div className="col-span-2"><span className="text-gray-400">Error:</span> <span className="text-red-300">{pipelineResult.error}</span></div>
+                        )}
+                      </div>
+                      {pipelineResult.paused_for_hitl && (
+                        <p className="text-amber-300/70 text-xs mt-2">
+                          Switch to Director role to approve or reject this decision.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          )}
+
+          {/* ═══ SHIPMENT ENTRY TAB ═══ */}
+          {selectedTab === 'shipment' && (
           <div className="glass-card p-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-linear-to-r from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
                 <Package className="w-5 h-5 text-white" />
               </div>
               <div>
@@ -116,7 +373,7 @@ export default function WarehouseDashboard() {
               <div className="text-right">
                 <div className="text-xs text-gray-400 mb-1">Form Progress</div>
                 <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <motion.div className="h-full bg-gradient-to-r from-blue-500 to-purple-500" animate={{ width: `${formProgress}%` }} transition={{ duration: 0.3 }} />
+                  <motion.div className="h-full bg-linear-to-r from-blue-500 to-purple-500" animate={{ width: `${formProgress}%` }} transition={{ duration: 0.3 }} />
                 </div>
                 <div className="text-xs text-gray-400 mt-1">{Math.round(formProgress)}%</div>
               </div>
@@ -187,7 +444,7 @@ export default function WarehouseDashboard() {
                   Clear Form
                 </motion.button>
                 <motion.button type="submit" disabled={isSubmitting || formProgress < 100}
-                  className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 shadow-lg shadow-purple-500/25"
+                  className="flex-1 py-3 bg-linear-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 shadow-lg shadow-purple-500/25"
                   whileHover={{ scale: formProgress >= 100 ? 1.02 : 1 }} whileTap={{ scale: formProgress >= 100 ? 0.98 : 1 }}
                 >
                   {isSubmitting ? (
@@ -205,6 +462,7 @@ export default function WarehouseDashboard() {
               </div>
             </form>
           </div>
+          )}
         </motion.div>
 
         <div className="space-y-6">

@@ -15,16 +15,55 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone, date
+from contextlib import asynccontextmanager
+import asyncio
 import uuid
 import json
 import os
+import logging
+
+logger = logging.getLogger("supplyguard")
 
 # ── Import intelligence modules ──────────────────────────────
 from intelligence.anomaly import anomaly_score, anomaly_score_for_supplier
 from intelligence.forecast import run_forecast, run_forecast_for_supplier
 from intelligence.risk_score import compute_risk
 
-app = FastAPI(title="SupplyGuard AI Backend", version="1.0.0")
+# ── Auto-scan interval (seconds). 0 = disabled. ─────────
+AUTO_SCAN_INTERVAL = int(os.getenv("AUTO_SCAN_INTERVAL", "60"))  # default: every 60s
+
+
+# ── Background auto-scan task ────────────────────────────
+async def _background_auto_scan():
+    """Periodic background task: scan all suppliers for anomalies,
+    auto-create events, and auto-trigger the pipeline."""
+    await asyncio.sleep(5)  # wait for server to be fully ready
+    while True:
+        try:
+            logger.info("[AUTO-SCAN] Running scheduled supplier scan...")
+            result = _run_auto_scan()
+            if result["events_created"] > 0:
+                logger.info(f"[AUTO-SCAN] Detected {result['events_created']} disruptions, triggered {result['pipelines_triggered']} pipelines")
+            else:
+                logger.info("[AUTO-SCAN] No new disruptions detected.")
+        except Exception as e:
+            logger.error(f"[AUTO-SCAN] Error: {e}")
+        await asyncio.sleep(AUTO_SCAN_INTERVAL)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: launch the background auto-scan if enabled."""
+    task = None
+    if AUTO_SCAN_INTERVAL > 0:
+        logger.info(f"[AUTO-SCAN] Background scan enabled (every {AUTO_SCAN_INTERVAL}s)")
+        task = asyncio.create_task(_background_auto_scan())
+    yield
+    if task:
+        task.cancel()
+
+
+app = FastAPI(title="SupplyGuard AI Backend", version="1.0.0", lifespan=lifespan)
 
 # ── CORS — allow frontend on any localhost port ──────────────
 app.add_middleware(
@@ -424,6 +463,14 @@ def list_approvals(status: Optional[str] = Query(None)):
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return items
 
+@app.get("/api/approvals/state/{run_id}")
+def get_approval_state(run_id: str):
+    """GET /api/approvals/state/:run_id — load saved AgentState for HITL resume."""
+    for a in PENDING_APPROVALS.values():
+        if a["run_id"] == run_id:
+            return {"run_id": run_id, "state_json": a.get("state_json", {})}
+    raise HTTPException(status_code=404, detail=f"No approval found for run_id={run_id}")
+
 @app.get("/api/approvals/{approval_id}")
 def get_approval(approval_id: str):
     """GET /api/approvals/:id"""
@@ -691,6 +738,240 @@ def dashboard_stats():
         "total_audit_entries": len(AUDIT_LOG),
         "unread_notifications": len([n for n in NOTIFICATIONS if not n["is_read"]]),
     }
+
+# ═══════════════════════════════════════════════
+# AUTO-SCAN — Automatic disruption detection
+# ═══════════════════════════════════════════════
+
+# Track which supplier+type combos we've already auto-flagged (avoid duplicates)
+_AUTO_SCAN_SEEN: set[str] = set()
+
+
+def _run_auto_scan() -> dict:
+    """Scan all suppliers using anomaly detection + forecasting.
+    Auto-creates events for flagged suppliers and triggers the pipeline.
+    Returns a summary of findings."""
+    findings = []
+    events_created = 0
+    pipelines_triggered = 0
+
+    for sid, supplier in SUPPLIERS.items():
+        if not supplier["is_active"]:
+            continue
+
+        # 1. Run anomaly detection
+        anomaly = anomaly_score_for_supplier(sid)
+        anomaly_flagged = anomaly.get("anomaly_flag", False)
+        anomaly_votes = anomaly.get("votes", 0)
+
+        # 2. Run forecast
+        forecast = run_forecast_for_supplier(sid)
+        predicted_delay = forecast.get("predicted_delay", 0)
+        lower_ci = forecast.get("lower_ci", 0)
+        upper_ci = forecast.get("upper_ci", 0)
+
+        # Derive trend: compare predicted to historical mean
+        # If predicted > upper CI of a "normal" range, it's worsening
+        forecast_trend = "STABLE"
+        if predicted_delay > 5:
+            forecast_trend = "WORSENING"
+        elif predicted_delay < 2:
+            forecast_trend = "IMPROVING"
+
+        # 3. Check cert expiry
+        cert_expiry = supplier.get("quality_cert_expiry", "2099-12-31")
+        cert_expired = cert_expiry < date.today().isoformat()
+
+        # 4. Check financial health
+        financial_red = supplier.get("financial_health") == "RED"
+
+        # ── Decision: should we flag this supplier? ──────────
+        should_flag = False
+        event_type = "DELIVERY_MISS"
+        severity = "MEDIUM"
+        reason = ""
+
+        if anomaly_flagged and anomaly_votes >= 2:
+            should_flag = True
+            event_type = "DELIVERY_MISS"
+            severity = "HIGH" if anomaly_votes >= 3 else "MEDIUM"
+            reason = f"Anomaly ensemble flagged ({anomaly_votes}/3 votes). Predicted delay: {predicted_delay:.1f} days."
+
+        if forecast_trend == "WORSENING" and predicted_delay > 5:
+            should_flag = True
+            event_type = "DELIVERY_MISS"
+            severity = "HIGH" if predicted_delay > 7 else "MEDIUM"
+            reason = f"Forecast trend WORSENING — predicted {predicted_delay:.1f}-day delay (CI: {lower_ci:.1f}–{upper_ci:.1f})."
+
+        if cert_expired:
+            should_flag = True
+            event_type = "QUALITY_HOLD"
+            severity = "CRITICAL" if financial_red else "HIGH"
+            reason = f"Quality cert expired ({cert_expiry}). {'Financial health RED.' if financial_red else ''}"
+
+        if financial_red and not cert_expired:
+            should_flag = True
+            event_type = "FINANCIAL_FLAG"
+            severity = "HIGH"
+            reason = f"Financial health RED flagged by monitoring."
+
+        if not should_flag:
+            findings.append({
+                "supplier_id": sid,
+                "supplier_name": supplier["supplier_name"],
+                "status": "OK",
+                "anomaly_votes": anomaly_votes,
+                "predicted_delay": round(predicted_delay, 2),
+                "event_created": False,
+            })
+            continue
+
+        # Deduplicate: don't create same event type for same supplier twice
+        dedup_key = f"{sid}:{event_type}"
+        if dedup_key in _AUTO_SCAN_SEEN:
+            findings.append({
+                "supplier_id": sid,
+                "supplier_name": supplier["supplier_name"],
+                "status": "ALREADY_FLAGGED",
+                "anomaly_votes": anomaly_votes,
+                "predicted_delay": round(predicted_delay, 2),
+                "event_created": False,
+            })
+            continue
+
+        _AUTO_SCAN_SEEN.add(dedup_key)
+
+        # ── Auto-create event ────────────────────────────────
+        event_id = str(uuid.uuid4())
+        new_event = {
+            "event_id": event_id,
+            "supplier_id": sid,
+            "event_type": event_type,
+            "delay_days": max(1, int(round(predicted_delay))),
+            "description": f"[AUTO-DETECTED] {reason}",
+            "severity": severity,
+            "auto_detected": True,
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+        }
+        EVENTS.append(new_event)
+        events_created += 1
+
+        # ── Auto-trigger pipeline ────────────────────────────
+        pipeline_result = None
+        try:
+            import sys
+            from pathlib import Path
+            project_root = str(Path(__file__).resolve().parent.parent.parent)
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            from agents.orchestrator import run_pipeline
+            state = run_pipeline(new_event)
+            pipeline_result = {
+                "run_id": state.run_id,
+                "action": state.decision.action if state.decision else None,
+                "composite_score": state.decision.composite_score if state.decision else None,
+                "hitl_required": state.decision.hitl_required if state.decision else None,
+                "paused_for_hitl": state.paused_for_hitl,
+                "po_id": state.executor.po_id if state.executor else None,
+            }
+            pipelines_triggered += 1
+        except Exception as e:
+            pipeline_result = {"error": str(e)}
+
+        findings.append({
+            "supplier_id": sid,
+            "supplier_name": supplier["supplier_name"],
+            "status": "FLAGGED",
+            "reason": reason,
+            "anomaly_votes": anomaly_votes,
+            "predicted_delay": round(predicted_delay, 2),
+            "severity": severity,
+            "event_type": event_type,
+            "event_id": event_id,
+            "event_created": True,
+            "pipeline_result": pipeline_result,
+        })
+
+    return {
+        "scan_time": datetime.now(timezone.utc).isoformat(),
+        "suppliers_scanned": len([s for s in SUPPLIERS.values() if s["is_active"]]),
+        "events_created": events_created,
+        "pipelines_triggered": pipelines_triggered,
+        "findings": findings,
+    }
+
+
+@app.post("/api/auto-scan")
+def trigger_auto_scan():
+    """POST /api/auto-scan — Manually trigger the AI disruption scanner.
+    Scans all active suppliers using anomaly detection + forecasting,
+    auto-creates events for flagged suppliers, and triggers the pipeline."""
+    return _run_auto_scan()
+
+
+@app.post("/api/auto-scan/reset")
+def reset_auto_scan():
+    """Reset the dedup cache so the scanner can re-flag suppliers."""
+    _AUTO_SCAN_SEEN.clear()
+    return {"status": "ok", "message": "Auto-scan dedup cache cleared"}
+
+
+class PipelineRunRequest(BaseModel):
+    event_id: str
+
+@app.post("/api/pipeline/run")
+def trigger_pipeline(req: PipelineRunRequest):
+    """POST /api/pipeline/run — trigger the agent pipeline for an event.
+    Calls the agent layer and returns the pipeline result."""
+    # Find the event
+    event = None
+    for e in EVENTS:
+        if e["event_id"] == req.event_id:
+            event = e
+            break
+    if not event:
+        raise HTTPException(status_code=404, detail=f"Event {req.event_id} not found")
+
+    try:
+        import sys
+        from pathlib import Path
+        # Add project root to path so we can import agents
+        project_root = str(Path(__file__).resolve().parent.parent.parent)
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+
+        from agents.orchestrator import run_pipeline
+        state = run_pipeline(event)
+        return {
+            "status": "completed",
+            "run_id": state.run_id,
+            "composite_score": state.decision.composite_score if state.decision else None,
+            "action": state.decision.action if state.decision else None,
+            "hitl_required": state.decision.hitl_required if state.decision else None,
+            "paused_for_hitl": state.paused_for_hitl,
+            "po_id": state.executor.po_id if state.executor else None,
+            "audit_entries": len(state.audit_entries),
+            "error": state.error,
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.post("/api/events")
+def create_event(event: dict):
+    """POST /api/events — create a new supplier event (for UI demo)."""
+    event_id = event.get("event_id") or str(uuid.uuid4())
+    event["event_id"] = event_id
+    # Ensure required fields
+    if "supplier_id" not in event or "event_type" not in event:
+        raise HTTPException(status_code=400, detail="Missing supplier_id or event_type")
+    if "severity" not in event:
+        event["severity"] = "MEDIUM"
+    if "delay_days" not in event:
+        event["delay_days"] = 0
+    if "description" not in event:
+        event["description"] = f"{event['event_type']} event for supplier {event['supplier_id']}"
+    EVENTS.append(event)
+    return event
 
 @app.get("/api/pipeline/runs")
 def list_pipeline_runs():

@@ -45,7 +45,7 @@ function ToastItem({ toast, onRemove }: ToastProps) {
       transition={{ duration: 0.3, type: 'spring', stiffness: 200 }}
       className={`glass-card p-4 flex items-center space-x-3 min-w-[320px] border ${styles[toast.type]}`}
     >
-      <Icon className="w-5 h-5 flex-shrink-0" />
+      <Icon className="w-5 h-5 shrink-0" />
       <span className="flex-1 text-sm font-medium">{toast.message}</span>
 
       <motion.button
@@ -99,4 +99,43 @@ export function useToast() {
     addToast,
     removeToast,
   }
+}
+
+// ── Global Toast Context ─────────────────────────────────
+import { createContext, useContext, useCallback } from 'react'
+
+interface ToastContextValue {
+  addToast: (toast: Omit<Toast, 'id'>) => void
+  success: (message: string) => void
+  error: (message: string) => void
+  warning: (message: string) => void
+  info: (message: string) => void
+}
+
+const ToastContext = createContext<ToastContextValue>({
+  addToast: () => {},
+  success: () => {},
+  error: () => {},
+  warning: () => {},
+  info: () => {},
+})
+
+export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const { toasts, addToast, removeToast } = useToast()
+
+  const success = useCallback((message: string) => addToast({ type: 'success', message }), [addToast])
+  const error = useCallback((message: string) => addToast({ type: 'error', message }), [addToast])
+  const warning = useCallback((message: string) => addToast({ type: 'warning', message }), [addToast])
+  const info = useCallback((message: string) => addToast({ type: 'info', message }), [addToast])
+
+  return (
+    <ToastContext.Provider value={{ addToast, success, error, warning, info }}>
+      {children}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    </ToastContext.Provider>
+  )
+}
+
+export function useGlobalToast() {
+  return useContext(ToastContext)
 }

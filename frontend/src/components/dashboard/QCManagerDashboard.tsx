@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   AlertTriangle, 
   CheckCircle, 
-  Clock,
-  Eye,
   TrendingUp,
   Shield,
   Activity,
-  BarChart3
+  BarChart3,
+  Radar,
+  Zap,
+  RefreshCw,
 } from 'lucide-react'
 import {
   getEvents,
@@ -16,21 +17,29 @@ import {
   getPipelineRuns,
   getAuditTrail,
   getDashboardStats,
+  triggerAutoScan,
+  resetAutoScan,
   type SupplierEvent,
   type Supplier,
   type PipelineRun,
   type AuditEntry,
   type DashboardStats,
+  type AutoScanResult,
+  type ScanFinding,
 } from '../../api'
+import { useGlobalToast } from '../ui/Toast'
 
 export default function QCManagerDashboard() {
-  const [selectedTab, setSelectedTab] = useState('queue')
+  const [selectedTab, setSelectedTab] = useState('scan')
   const [events, setEvents] = useState<SupplierEvent[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [auditTrail, setAuditTrail] = useState<AuditEntry[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [scanResult, setScanResult] = useState<AutoScanResult | null>(null)
+  const [isScanning, setIsScanning] = useState(false)
+  const toast = useGlobalToast()
 
   const agentSteps = [
     { name: 'intake_agent', label: 'Intake Agent', icon: '📥', description: 'Data validation' },
@@ -125,6 +134,7 @@ export default function QCManagerDashboard() {
       {/* Tab Navigation */}
       <div className="flex space-x-1 bg-white/5 p-1 rounded-lg">
         {[
+          { id: 'scan', label: 'AI Auto-Detect', icon: Radar },
           { id: 'queue', label: 'Event Queue', icon: AlertTriangle },
           { id: 'agents', label: 'Live Agents', icon: Activity },
           { id: 'metrics', label: 'Metrics', icon: BarChart3 }
@@ -152,6 +162,249 @@ export default function QCManagerDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2">
+          {/* ═══ AI AUTO-DETECT TAB ═══ */}
+          {selectedTab === 'scan' && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <Radar className="w-6 h-6 text-cyan-400" />
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">AI Disruption Scanner</h2>
+                    <p className="text-xs text-gray-400">
+                      Analyzes all suppliers using anomaly detection, forecasting & cert monitoring
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <motion.button
+                    onClick={async () => {
+                      await resetAutoScan()
+                      setScanResult(null)
+                      toast.info('Scan cache cleared — ready for a fresh scan')
+                    }}
+                    className="px-3 py-2 rounded-lg bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all text-xs"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </motion.button>
+                  <motion.button
+                    onClick={async () => {
+                      setIsScanning(true)
+                      try {
+                        const result = await triggerAutoScan()
+                        setScanResult(result)
+                        if (result.events_created > 0) {
+                          toast.warning(`Detected ${result.events_created} disruption(s) — ${result.pipelines_triggered} pipeline(s) triggered`)
+                          fetchData()  // refresh events list
+                        } else {
+                          toast.success('All suppliers healthy — no disruptions detected')
+                        }
+                      } catch {
+                        toast.error('Auto-scan failed — is the backend running?')
+                      } finally {
+                        setIsScanning(false)
+                      }
+                    }}
+                    disabled={isScanning}
+                    className={`flex items-center space-x-2 px-5 py-2.5 rounded-lg font-medium text-sm transition-all ${
+                      isScanning
+                        ? 'bg-cyan-500/20 text-cyan-300 cursor-wait'
+                        : 'bg-linear-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/20'
+                    }`}
+                    whileHover={!isScanning ? { scale: 1.05 } : {}}
+                    whileTap={!isScanning ? { scale: 0.95 } : {}}
+                  >
+                    {isScanning ? (
+                      <>
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                        >
+                          <Radar className="w-4 h-4" />
+                        </motion.div>
+                        <span>Scanning {suppliers.filter(s => s.is_active).length} suppliers...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4" />
+                        <span>Run AI Scan</span>
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+              </div>
+
+              {/* How it works */}
+              {!scanResult && !isScanning && (
+                <div className="bg-white/5 border border-white/10 rounded-lg p-6 text-center">
+                  <Radar className="w-16 h-16 mx-auto mb-4 text-cyan-400/30" />
+                  <h3 className="text-white font-medium mb-2">Automatic Disruption Detection</h3>
+                  <p className="text-gray-400 text-sm max-w-md mx-auto mb-4">
+                    The AI scanner analyzes all active suppliers using a 3-method anomaly ensemble, 
+                    AutoARIMA forecasting, cert expiry tracking, and financial health monitoring. 
+                    Flagged suppliers automatically trigger the 5-agent pipeline.
+                  </p>
+                  <div className="flex justify-center space-x-6 text-xs text-gray-500">
+                    <span className="flex items-center space-x-1"><CheckCircle className="w-3 h-3 text-emerald-400" /><span>Z-Score</span></span>
+                    <span className="flex items-center space-x-1"><CheckCircle className="w-3 h-3 text-emerald-400" /><span>MAD</span></span>
+                    <span className="flex items-center space-x-1"><CheckCircle className="w-3 h-3 text-emerald-400" /><span>Percentile</span></span>
+                    <span className="flex items-center space-x-1"><CheckCircle className="w-3 h-3 text-blue-400" /><span>AutoARIMA</span></span>
+                    <span className="flex items-center space-x-1"><CheckCircle className="w-3 h-3 text-amber-400" /><span>Cert Check</span></span>
+                  </div>
+                  <p className="text-gray-500 text-xs mt-4">
+                    Background scans also run automatically every 60 seconds.
+                  </p>
+                </div>
+              )}
+
+              {/* Scanning animation */}
+              {isScanning && (
+                <div className="bg-white/5 border border-cyan-500/20 rounded-lg p-8 text-center">
+                  <motion.div
+                    animate={{ rotate: 360, scale: [1, 1.1, 1] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                    className="inline-block mb-4"
+                  >
+                    <Radar className="w-16 h-16 text-cyan-400" />
+                  </motion.div>
+                  <h3 className="text-white font-medium mb-2">Scanning Suppliers...</h3>
+                  <p className="text-gray-400 text-sm">
+                    Running anomaly detection, forecasting, and risk analysis across all {suppliers.filter(s => s.is_active).length} active suppliers
+                  </p>
+                  <div className="mt-4 flex justify-center">
+                    <motion.div
+                      className="h-1 bg-linear-to-r from-cyan-500 to-blue-500 rounded-full"
+                      animate={{ width: ['0%', '100%'] }}
+                      transition={{ duration: 3, repeat: Infinity }}
+                      style={{ width: '200px' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Scan Results */}
+              {scanResult && !isScanning && (
+                <div className="space-y-4">
+                  {/* Summary bar */}
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-white">{scanResult.suppliers_scanned}</div>
+                      <div className="text-xs text-gray-400">Scanned</div>
+                    </div>
+                    <div className={`border rounded-lg p-3 text-center ${
+                      scanResult.events_created > 0 ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/10 border-emerald-500/30'
+                    }`}>
+                      <div className={`text-2xl font-bold ${
+                        scanResult.events_created > 0 ? 'text-red-400' : 'text-emerald-400'
+                      }`}>{scanResult.events_created}</div>
+                      <div className="text-xs text-gray-400">Disruptions</div>
+                    </div>
+                    <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-blue-400">{scanResult.pipelines_triggered}</div>
+                      <div className="text-xs text-gray-400">Pipelines</div>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+                      <div className="text-xs font-mono text-gray-400">{new Date(scanResult.scan_time).toLocaleTimeString()}</div>
+                      <div className="text-xs text-gray-500 mt-1">Last Scan</div>
+                    </div>
+                  </div>
+
+                  {/* Per-supplier findings */}
+                  <AnimatePresence>
+                    {scanResult.findings.map((finding: ScanFinding, idx: number) => (
+                      <motion.div
+                        key={finding.supplier_id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        className={`border rounded-lg p-4 ${
+                          finding.status === 'FLAGGED'
+                            ? 'bg-red-500/5 border-red-500/20'
+                            : finding.status === 'ALREADY_FLAGGED'
+                            ? 'bg-amber-500/5 border-amber-500/20'
+                            : 'bg-white/5 border-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <span className={`w-2.5 h-2.5 rounded-full ${
+                              finding.status === 'FLAGGED' ? 'bg-red-500 animate-pulse' :
+                              finding.status === 'ALREADY_FLAGGED' ? 'bg-amber-500' :
+                              'bg-emerald-500'
+                            }`} />
+                            <div>
+                              <div className="text-sm font-medium text-white">{finding.supplier_name}</div>
+                              <div className="text-xs text-gray-400">
+                                Anomaly votes: {finding.anomaly_votes}/3 · Predicted delay: {finding.predicted_delay}d
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            {finding.severity && (
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getSeverityBadge(finding.severity)}`}>
+                                {finding.severity}
+                              </span>
+                            )}
+                            {finding.event_type && (
+                              <span className="px-2 py-0.5 rounded-full text-xs bg-white/10 text-gray-300">
+                                {finding.event_type}
+                              </span>
+                            )}
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              finding.status === 'FLAGGED' ? 'bg-red-500/20 text-red-300' :
+                              finding.status === 'ALREADY_FLAGGED' ? 'bg-amber-500/20 text-amber-300' :
+                              'bg-emerald-500/20 text-emerald-300'
+                            }`}>
+                              {finding.status === 'FLAGGED' ? '⚠️ FLAGGED' :
+                               finding.status === 'ALREADY_FLAGGED' ? '🔁 Already Flagged' :
+                               '✅ OK'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Reason + Pipeline result for flagged */}
+                        {finding.reason && (
+                          <div className="mt-2 text-xs text-gray-300 bg-black/20 rounded p-2">
+                            {finding.reason}
+                          </div>
+                        )}
+                        {finding.pipeline_result && (
+                          <div className="mt-2 flex items-center space-x-3 text-xs">
+                            <span className="text-gray-400">Pipeline:</span>
+                            {finding.pipeline_result.action && (
+                              <span className={`px-2 py-0.5 rounded-full ${
+                                finding.pipeline_result.action.includes('ESCALATE')
+                                  ? 'bg-amber-500/20 text-amber-300'
+                                  : 'bg-emerald-500/20 text-emerald-300'
+                              }`}>
+                                {finding.pipeline_result.action}
+                              </span>
+                            )}
+                            {finding.pipeline_result.composite_score != null && (
+                              <span className="text-gray-400">
+                                Score: <span className="text-white font-medium">{finding.pipeline_result.composite_score.toFixed(1)}</span>
+                              </span>
+                            )}
+                            {finding.pipeline_result.hitl_required && (
+                              <span className="text-amber-400">⏳ HITL Required</span>
+                            )}
+                            {finding.pipeline_result.po_id && (
+                              <span className="text-emerald-400">PO: {finding.pipeline_result.po_id}</span>
+                            )}
+                            {finding.pipeline_result.error && (
+                              <span className="text-red-400">Error: {finding.pipeline_result.error}</span>
+                            )}
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </motion.div>
+          )}
+
           {selectedTab === 'queue' && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6">
               <div className="flex items-center justify-between mb-6">
@@ -284,7 +537,7 @@ export default function QCManagerDashboard() {
                   </div>
                   <div className="bg-gray-700 rounded-full h-3 overflow-hidden">
                     <motion.div
-                      className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
+                      className="h-full bg-linear-to-r from-blue-500 to-purple-500"
                         animate={{ width: `${(completedAgents.length / 5) * 100}%` }}
                         transition={{ duration: 0.5 }}
                     />

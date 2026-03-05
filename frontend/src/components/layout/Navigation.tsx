@@ -85,7 +85,7 @@ export default function Navigation({ userRole, userName, onLogout }: NavigationP
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-4">
             <Link to="/dashboard" className="flex items-center space-x-3 group">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+              <div className="w-8 h-8 bg-linear-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                 <Building2 className="w-5 h-5 text-white" />
               </div>
               <div>
@@ -94,7 +94,7 @@ export default function Navigation({ userRole, userName, onLogout }: NavigationP
               </div>
             </Link>
             
-            <div className={`px-2 py-1 rounded-md bg-gradient-to-r ${roleBadge.color} text-xs font-medium text-white`}>
+            <div className={`px-2 py-1 rounded-md bg-linear-to-r ${roleBadge.color} text-xs font-medium text-white`}>
               {roleBadge.label}
             </div>
           </div>
@@ -138,7 +138,7 @@ export default function Navigation({ userRole, userName, onLogout }: NavigationP
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 className="flex items-center space-x-3 p-2 rounded-lg hover:bg-white/10 transition-colors"
               >
-                <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                <div className="w-8 h-8 bg-linear-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
                   <span className="text-white text-sm font-medium">
                     {userName.split(' ').map(n => n[0]).join('')}
                   </span>

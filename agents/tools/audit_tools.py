@@ -1,18 +1,26 @@
 # agents/tools/audit_tools.py
-# CrewAI tools wrapping P4's audit trail REST endpoints.
-# Falls back to local state.audit_entries list when backend is offline.
+# Tools wrapping the audit trail (immutable log of every agent decision).
 #
-# P3→P4 CONTRACT CHECK: POST /api/audit and GET /api/audit/:run_id
-# do not exist yet in api/main.py. P4 must add them.
+# When running in-process with the backend, writes directly to AUDIT_LOG.
+# When running standalone, falls back to HTTP calls.
 
-import httpx
 import os
+import uuid
 import logging
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = os.getenv("BACKEND_API_URL", "http://localhost:3001")
+
+
+def _get_audit_log():
+    """Try to import the in-memory AUDIT_LOG from the backend."""
+    try:
+        from api.main import AUDIT_LOG
+        return AUDIT_LOG
+    except ImportError:
+        return None
 
 
 def log_audit_decision(
@@ -24,9 +32,8 @@ def log_audit_decision(
     rationale: str,
     hitl_actor: str = None,
 ) -> dict:
-    """Immutably log this agent's decision to audit_log table via P4 API.
-    Returns the full audit entry dict (with entry_id if backend is online,
-    or a local fallback dict if offline)."""
+    """Immutably log this agent's decision to audit_log.
+    Returns the full audit entry dict (with entry_id)."""
     entry = {
         "run_id": run_id,
         "agent_name": agent_name,
@@ -37,13 +44,24 @@ def log_audit_decision(
         "hitl_actor": hitl_actor,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+    # ── Direct in-memory access (avoids HTTP self-deadlock) ──
+    audit_log = _get_audit_log()
+    if audit_log is not None:
+        entry_id = str(uuid.uuid4())
+        entry["entry_id"] = entry_id
+        audit_log.append(entry)
+        return entry
+
+    # ── Fallback: HTTP call to backend ──
     try:
+        import httpx
         resp = httpx.post(f"{BASE_URL}/api/audit", json=entry, timeout=15)
         resp.raise_for_status()
         data = resp.json()
         entry["entry_id"] = data.get("entry_id", "")
         return entry
-    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+    except Exception as e:
         logger.warning(f"Audit log POST failed ({agent_name}): {e} — saving locally")
         entry["entry_id"] = f"LOCAL-{run_id}-{agent_name}"
         return entry
@@ -51,10 +69,19 @@ def log_audit_decision(
 
 def get_audit_trail(run_id: str) -> list:
     """Fetch full ordered audit trail for a pipeline run."""
+    # ── Direct in-memory access ──
+    audit_log = _get_audit_log()
+    if audit_log is not None:
+        trail = [a for a in audit_log if a["run_id"] == run_id]
+        trail.sort(key=lambda x: x.get("timestamp", ""))
+        return trail
+
+    # ── Fallback: HTTP call ──
     try:
+        import httpx
         resp = httpx.get(f"{BASE_URL}/api/audit/{run_id}", timeout=15)
         resp.raise_for_status()
         return resp.json()
-    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+    except Exception as e:
         logger.warning(f"Audit trail GET failed for {run_id}: {e}")
         return []

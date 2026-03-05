@@ -163,4 +163,62 @@ export const getSupplierRisk = (supplierId: string) =>
 export const getSupplierAnomaly = (supplierId: string) =>
   api.get(`/anomalies/${supplierId}`).then(r => r.data)
 
+// ─── Pipeline Trigger ─────────────────────────────────────
+
+export interface PipelineResult {
+  status: string
+  run_id?: string
+  composite_score?: number
+  action?: string
+  hitl_required?: boolean
+  paused_for_hitl?: boolean
+  po_id?: string | null
+  audit_entries?: number
+  error?: string | null
+}
+
+export const triggerPipeline = (eventId: string) =>
+  api.post<PipelineResult>('/pipeline/run', { event_id: eventId }).then(r => r.data)
+
+export const createEvent = (event: Partial<SupplierEvent>) =>
+  api.post<SupplierEvent>('/events', event).then(r => r.data)
+
+// ─── Auto-Scan (AI Disruption Detection) ─────────────────
+
+export interface ScanFinding {
+  supplier_id: string
+  supplier_name: string
+  status: 'OK' | 'FLAGGED' | 'ALREADY_FLAGGED'
+  reason?: string
+  anomaly_votes: number
+  predicted_delay: number
+  severity?: string
+  event_type?: string
+  event_id?: string
+  event_created: boolean
+  pipeline_result?: {
+    run_id?: string
+    action?: string
+    composite_score?: number
+    hitl_required?: boolean
+    paused_for_hitl?: boolean
+    po_id?: string | null
+    error?: string
+  }
+}
+
+export interface AutoScanResult {
+  scan_time: string
+  suppliers_scanned: number
+  events_created: number
+  pipelines_triggered: number
+  findings: ScanFinding[]
+}
+
+export const triggerAutoScan = () =>
+  api.post<AutoScanResult>('/auto-scan').then(r => r.data)
+
+export const resetAutoScan = () =>
+  api.post('/auto-scan/reset').then(r => r.data)
+
 export default api

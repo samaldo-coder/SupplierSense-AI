@@ -45,11 +45,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900" />
+      <div className="absolute inset-0 bg-linear-to-br from-slate-900 via-purple-900/20 to-slate-900" />
       
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div 
-          className="absolute top-20 left-20 w-64 h-64 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-full blur-3xl"
+          className="absolute top-20 left-20 w-64 h-64 bg-linear-to-r from-blue-500/10 to-purple-500/10 rounded-full blur-3xl"
           animate={{ 
             scale: [1, 1.2, 1],
             opacity: [0.3, 0.5, 0.3]
@@ -71,7 +71,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
             className="mb-4"
           >
-            <div className="w-16 h-16 mx-auto bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/25">
+            <div className="w-16 h-16 mx-auto bg-linear-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/25">
               <Building2 className="w-8 h-8 text-white" />
             </div>
           </motion.div>
@@ -82,7 +82,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             transition={{ delay: 0.4 }}
             className="text-3xl font-bold text-gradient mb-2"
           >
-            SupplierSense AI
+            SupplyGuard AI
           </motion.h1>
           
           <motion.p 
@@ -91,7 +91,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             transition={{ delay: 0.6 }}
             className="text-gray-400 font-mono text-sm"
           >
-            Intelligent Quality Control Platform
+            AI-Powered Supply Chain Risk Management
           </motion.p>
         </div>
 
@@ -121,7 +121,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   whileTap={{ scale: 0.98 }}
                 >
                   <div className="flex items-center space-x-3">
-                    <div className={`w-10 h-10 rounded-lg bg-gradient-to-r ${role.gradient} flex items-center justify-center`}>
+                    <div className={`w-10 h-10 rounded-lg bg-linear-to-r ${role.gradient} flex items-center justify-center`}>
                       <Icon className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1">
@@ -187,7 +187,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             <motion.button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25"
+              className="w-full py-3 bg-linear-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >

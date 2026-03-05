@@ -5,8 +5,8 @@
 import uuid
 import json
 import logging
-import httpx
 import os
+from datetime import datetime, timezone
 from contracts.schemas import SupplierEvent, AgentState
 from agents.intake_agent import run_intake_agent
 from agents.quality_agent import run_quality_agent
@@ -17,6 +17,41 @@ from agents.executor_agent import run_executor_agent
 logger = logging.getLogger(__name__)
 
 BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:3001")
+
+
+def _post_approval_direct(run_id: str, state: AgentState) -> bool:
+    """Try to write the approval directly to the in-memory store (avoids HTTP self-deadlock).
+    Returns True if successful, False if direct access not available."""
+    try:
+        from api.main import PENDING_APPROVALS, NOTIFICATIONS
+        approval_id = str(uuid.uuid4())
+        PENDING_APPROVALS[approval_id] = {
+            "approval_id": approval_id,
+            "run_id": run_id,
+            "state_json": state.model_dump(),
+            "summary": state.decision.rationale if state.decision else "",
+            "recommended_supplier_id": state.decision.recommended_supplier_id if state.decision else None,
+            "status": "PENDING",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "decided_at": None,
+            "decided_by": None,
+            "decision_note": None,
+        }
+        # Also create a notification for the director
+        NOTIFICATIONS.append({
+            "notification_id": str(uuid.uuid4()),
+            "recipient_role": "director",
+            "notification_type": "approval_required",
+            "title": f"[APPROVAL REQUIRED] Pipeline {run_id}",
+            "body": state.decision.rationale if state.decision else "Approval needed",
+            "metadata": {"run_id": run_id, "approval_id": approval_id},
+            "is_read": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        logger.info(f"[{run_id}] Approval request written directly (approval_id={approval_id})")
+        return True
+    except ImportError:
+        return False
 
 
 def run_pipeline(event_dict: dict) -> AgentState:
@@ -88,25 +123,28 @@ def run_pipeline(event_dict: dict) -> AgentState:
             f"[{run_id}] HITL required — action={state.decision.action}. "
             f"Pausing pipeline."
         )
-        # Try to persist to approval queue via P4 API
-        try:
-            resp = httpx.post(
-                f"{BACKEND_URL}/api/approvals",
-                json={
-                    "run_id": run_id,
-                    "state_json": state.model_dump(),
-                    "summary": state.decision.rationale,
-                    "recommended_supplier": state.decision.recommended_supplier_id,
-                },
-                timeout=15,
-            )
-            resp.raise_for_status()
-            logger.info(f"[{run_id}] Approval request posted to backend")
-        except Exception as e:
-            logger.warning(
-                f"[{run_id}] Could not post approval to backend: {e} — "
-                f"state preserved in memory only"
-            )
+        # Try direct in-memory write first (avoids HTTP self-deadlock)
+        if not _post_approval_direct(run_id, state):
+            # Fallback: HTTP call (only works when backend is a separate process)
+            try:
+                import httpx
+                resp = httpx.post(
+                    f"{BACKEND_URL}/api/approvals",
+                    json={
+                        "run_id": run_id,
+                        "state_json": state.model_dump(),
+                        "summary": state.decision.rationale,
+                        "recommended_supplier_id": state.decision.recommended_supplier_id,
+                    },
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                logger.info(f"[{run_id}] Approval request posted to backend via HTTP")
+            except Exception as e:
+                logger.warning(
+                    f"[{run_id}] Could not post approval to backend: {e} — "
+                    f"state preserved in memory only"
+                )
 
         state.paused_for_hitl = True
         return state  # Do NOT run Agent 5

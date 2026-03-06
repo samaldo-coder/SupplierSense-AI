@@ -87,11 +87,12 @@ def determine_action_and_hitl(
     composite_score: float,
     cert_valid: bool,
     financial_health: str,       # "GREEN" | "YELLOW" | "RED"
-    forecast_trend: str,         # "WORSENING" | "STABLE" | "IMPROVING"
+    forecast_trend: str,         # "WORSENING" | "ELEVATED" | "STABLE" | "IMPROVING"
     anomaly_votes: int,
+    chronic_lateness: bool = False,
 ) -> tuple[str, bool]:
     """
-    Escalation rules applied in priority order (from AGENTS.md Part 7).
+    Escalation rules applied in priority order.
     Returns (action, hitl_required).
     """
     # Rule 1: Highest severity — VP escalation
@@ -99,7 +100,9 @@ def determine_action_and_hitl(
         return "ESCALATE_TO_VP", True
 
     # Rule 2: Strong dual signal — Director escalation
-    if forecast_trend == "WORSENING" and anomaly_votes >= 2:
+    # ELEVATED treated the same as WORSENING — a supplier stuck at high delays
+    # is as dangerous as one that is actively getting worse
+    if forecast_trend in ("WORSENING", "ELEVATED") and anomaly_votes >= 2:
         return "ESCALATE_TO_DIRECTOR", True
 
     # Rule 3: Score-based threshold
@@ -110,7 +113,11 @@ def determine_action_and_hitl(
     if not cert_valid:
         return "ESCALATE_TO_DIRECTOR", True
 
-    # Rule 5: Safe to auto-approve
+    # Rule 5: Chronic lateness with no improvement — still needs Director eyes
+    if chronic_lateness and forecast_trend not in ("IMPROVING",):
+        return "ESCALATE_TO_DIRECTOR", True
+
+    # Rule 6: Safe to auto-approve
     return "APPROVE", False
 
 
@@ -140,9 +147,10 @@ def fallback_rule_engine(state) -> "DecisionResult":
     cert_valid = q.cert_valid if q else True
     forecast_trend = h.forecast_trend if h else "STABLE"
     anomaly_votes = h.anomaly_votes if h else 0
+    chronic_lateness = h.chronic_lateness if h else False
 
     action, hitl_required = determine_action_and_hitl(
-        score, cert_valid, financial_health, forecast_trend, anomaly_votes
+        score, cert_valid, financial_health, forecast_trend, anomaly_votes, chronic_lateness
     )
 
     return DecisionResult(

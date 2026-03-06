@@ -3,11 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Building2, 
   LayoutDashboard, 
-  Package, 
-  Users, 
-  Activity, 
-  ClipboardCheck,
-  BarChart3,
   Settings,
   LogOut,
   ChevronDown,
@@ -42,30 +37,11 @@ export default function Navigation({ userRole, userName, onLogout }: NavigationP
     return () => clearInterval(interval)
   }, [userRole])
 
-  const getNavItems = () => {
-    const baseItems = [
-      { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }
-    ]
-
-    const roleItems = {
-      procurement: [
-        { path: '/shipments', label: 'Shipments', icon: Package },
-        { path: '/suppliers', label: 'Suppliers', icon: Users },
-      ],
-      qc_manager: [
-        { path: '/review', label: 'Review Queue', icon: ClipboardCheck },
-        { path: '/shipments', label: 'Shipments', icon: Package },
-        { path: '/processing', label: 'Live Agents', icon: Activity },
-      ],
-      director: [
-        { path: '/analytics', label: 'Analytics', icon: BarChart3 },
-        { path: '/suppliers', label: 'Suppliers', icon: Users },
-        { path: '/shipments', label: 'Shipments', icon: Package },
-      ]
-    }
-
-    return [...baseItems, ...roleItems[userRole]]
-  }
+  // Each role's dashboard already has rich internal tabs —
+  // a single "Dashboard" nav item is all that's needed.
+  const navItems = [
+    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  ]
 
   const getRoleBadge = () => {
     const badges = {
@@ -77,7 +53,6 @@ export default function Navigation({ userRole, userName, onLogout }: NavigationP
   }
 
   const roleBadge = getRoleBadge()
-  const navItems = getNavItems()
 
   return (
     <nav className="glass-card border-b border-white/10 backdrop-blur-xl sticky top-0 z-50">

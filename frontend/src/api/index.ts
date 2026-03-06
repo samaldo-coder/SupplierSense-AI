@@ -97,6 +97,8 @@ export interface PipelineRun {
   agents_completed: string[]
   started_at: string
   last_update: string
+  supplier_id: string | null
+  supplier_name: string | null
 }
 
 // ─── Suppliers ────────────────────────────────────────────
@@ -220,5 +222,16 @@ export const triggerAutoScan = () =>
 
 export const resetAutoScan = () =>
   api.post('/auto-scan/reset').then(r => r.data)
+
+// ─── Dev / Admin ──────────────────────────────────────────
+
+export interface ResetResult {
+  status: string
+  message: string
+  counts: { audit_log: number; approvals: number; purchase_orders: number; notifications: number }
+}
+
+export const resetBackendData = () =>
+  api.post<ResetResult>('/reset').then(r => r.data)
 
 export default api

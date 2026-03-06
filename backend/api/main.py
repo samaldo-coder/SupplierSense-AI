@@ -21,8 +21,34 @@ import uuid
 import json
 import os
 import logging
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from project root so OPENAI_API_KEY / SUPABASE_* are available
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 logger = logging.getLogger("supplyguard")
+
+# ── Persistent storage layer (in-memory + Supabase write-through) ────────────
+from api.db import (  # noqa: E402
+    AUDIT_LOG,
+    PENDING_APPROVALS,
+    PURCHASE_ORDERS,
+    NOTIFICATIONS,
+    insert_audit_entry,
+    get_audit_trail as db_get_audit_trail,
+    insert_approval,
+    update_approval,
+    get_approval,
+    get_approval_by_run_id,
+    list_approvals,
+    insert_purchase_order,
+    list_purchase_orders,
+    insert_notification,
+    list_notifications,
+    mark_notification_read,
+    load_from_supabase,
+)
 
 # ── Import intelligence modules ──────────────────────────────
 from intelligence.anomaly import anomaly_score, anomaly_score_for_supplier
@@ -53,7 +79,13 @@ async def _background_auto_scan():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: launch the background auto-scan if enabled."""
+    """Startup: hydrate in-memory stores from Supabase, then launch auto-scan."""
+    # Hydrate persisted data (audit trail, approvals, POs, notifications)
+    try:
+        load_from_supabase()
+    except Exception as e:
+        logger.warning(f"[Supabase] Hydration error (non-fatal): {e}")
+
     task = None
     if AUTO_SCAN_INTERVAL > 0:
         logger.info(f"[AUTO-SCAN] Background scan enabled (every {AUTO_SCAN_INTERVAL}s)")
@@ -257,11 +289,8 @@ EVENTS = [
     {"event_id": "c3000000-0000-0000-0000-000000000010", "supplier_id": "a1000000-0000-0000-0000-000000000009", "event_type": "FINANCIAL_FLAG", "delay_days": 2, "description": "IotaMetals credit rating downgrade flagged by monitoring service.", "severity": "MEDIUM"},
 ]
 
-# ── Mutable stores (in-memory, reset on restart) ─────────────
-AUDIT_LOG: list[dict] = []
-PENDING_APPROVALS: dict[str, dict] = {}
-PURCHASE_ORDERS: list[dict] = []
-NOTIFICATIONS: list[dict] = []
+# AUDIT_LOG, PENDING_APPROVALS, PURCHASE_ORDERS, NOTIFICATIONS
+# are imported from api.db — do not re-declare them here.
 
 
 # ═══════════════════════════════════════════════
@@ -378,10 +407,8 @@ class AuditLogEntry(BaseModel):
 
 @app.post("/api/audit")
 def create_audit_entry(entry: AuditLogEntry):
-    """POST /api/audit — immutably log an agent decision."""
-    entry_id = str(uuid.uuid4())
+    """POST /api/audit — immutably log an agent decision (persists to Supabase)."""
     record = {
-        "entry_id": entry_id,
         "run_id": entry.run_id,
         "agent_name": entry.agent_name,
         "inputs": entry.inputs,
@@ -391,15 +418,13 @@ def create_audit_entry(entry: AuditLogEntry):
         "hitl_actor": entry.hitl_actor,
         "timestamp": entry.timestamp or datetime.now(timezone.utc).isoformat(),
     }
-    AUDIT_LOG.append(record)
-    return {"entry_id": entry_id}
+    saved = insert_audit_entry(record)
+    return {"entry_id": saved["entry_id"]}
 
 @app.get("/api/audit/{run_id}")
-def get_audit_trail(run_id: str):
+def get_audit_trail_endpoint(run_id: str):
     """GET /api/audit/:run_id — ordered audit trail for a pipeline run."""
-    trail = [a for a in AUDIT_LOG if a["run_id"] == run_id]
-    trail.sort(key=lambda x: x.get("timestamp", ""))
-    return trail
+    return db_get_audit_trail(run_id)
 
 @app.delete("/api/audit/{entry_id}")
 def delete_audit_entry(entry_id: str):
@@ -424,7 +449,7 @@ class ApprovalDecision(BaseModel):
 
 @app.post("/api/approvals")
 def create_approval(req: ApprovalRequest):
-    """POST /api/approvals — create pending approval for Director."""
+    """POST /api/approvals — create pending approval for Director (persists to Supabase)."""
     approval_id = str(uuid.uuid4())
     record = {
         "approval_id": approval_id,
@@ -438,10 +463,9 @@ def create_approval(req: ApprovalRequest):
         "decided_at": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    PENDING_APPROVALS[approval_id] = record
+    insert_approval(record)
 
-    # Also write a notification for the director
-    NOTIFICATIONS.append({
+    insert_notification({
         "notification_id": str(uuid.uuid4()),
         "recipient_role": "director",
         "notification_type": "approval_required",
@@ -454,27 +478,22 @@ def create_approval(req: ApprovalRequest):
     return {"approval_id": approval_id}
 
 @app.get("/api/approvals")
-def list_approvals(status: Optional[str] = Query(None)):
+def list_approvals_endpoint(status: Optional[str] = Query(None)):
     """GET /api/approvals?status=PENDING — list approvals, optionally filtered."""
-    items = list(PENDING_APPROVALS.values())
-    if status:
-        items = [a for a in items if a["status"] == status.upper()]
-    # Sort newest first
-    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    return items
+    return list_approvals(status)
 
 @app.get("/api/approvals/state/{run_id}")
 def get_approval_state(run_id: str):
     """GET /api/approvals/state/:run_id — load saved AgentState for HITL resume."""
-    for a in PENDING_APPROVALS.values():
-        if a["run_id"] == run_id:
-            return {"run_id": run_id, "state_json": a.get("state_json", {})}
-    raise HTTPException(status_code=404, detail=f"No approval found for run_id={run_id}")
+    a = get_approval_by_run_id(run_id)
+    if not a:
+        raise HTTPException(status_code=404, detail=f"No approval found for run_id={run_id}")
+    return {"run_id": run_id, "state_json": a.get("state_json", {})}
 
 @app.get("/api/approvals/{approval_id}")
-def get_approval(approval_id: str):
+def get_approval_endpoint(approval_id: str):
     """GET /api/approvals/:id"""
-    a = PENDING_APPROVALS.get(approval_id)
+    a = get_approval(approval_id)
     if not a:
         raise HTTPException(status_code=404, detail=f"Approval {approval_id} not found")
     return a
@@ -482,34 +501,64 @@ def get_approval(approval_id: str):
 @app.patch("/api/approvals/{approval_id}/decide")
 def decide_approval(approval_id: str, body: ApprovalDecision):
     """PATCH /api/approvals/:id/decide — Director approves/rejects.
-    After DB update, calls POST localhost:8002/resume to trigger Agent 5."""
-    a = PENDING_APPROVALS.get(approval_id)
+
+    Flow:
+      1. Validate the approval exists and is still PENDING.
+      2. Persist the decision to Supabase via update_approval().
+      3. POST to localhost:8002/resume — this loads the saved AgentState
+         from the approval record and runs Agent 5 (Executor).
+      4. Return the resume result.
+    """
+    a = get_approval(approval_id)
     if not a:
         raise HTTPException(status_code=404, detail=f"Approval {approval_id} not found")
     if a["status"] != "PENDING":
         raise HTTPException(status_code=400, detail=f"Approval already decided: {a['status']}")
 
-    a["status"] = body.decision.upper()
-    a["decided_by"] = body.director_id
-    a["decision_note"] = body.note
-    a["decided_at"] = datetime.now(timezone.utc).isoformat()
+    decided_at = datetime.now(timezone.utc).isoformat()
+    decision_upper = body.decision.upper()
 
-    # Try to call the agent resume API
+    # Persist decision to in-memory + Supabase
+    update_approval(approval_id, {
+        "status": decision_upper,
+        "decided_by": body.director_id,
+        "decision_note": body.note,
+        "decided_at": decided_at,
+    })
+
+    # Notify the director's decision as a new notification
+    action_label = "approved" if decision_upper == "APPROVED" else "rejected"
+    insert_notification({
+        "notification_id": str(uuid.uuid4()),
+        "recipient_role": "procurement",
+        "notification_type": "decision_made",
+        "title": f"[DECISION] Pipeline {a['run_id']} {action_label} by {body.director_id or 'Director'}",
+        "body": body.note or f"Director {action_label} the recommended action.",
+        "metadata": {"approval_id": approval_id, "run_id": a["run_id"]},
+        "is_read": False,
+        "created_at": decided_at,
+    })
+
+    # Call the Agent Resume API — triggers Agent 5 on approval
     resume_url = os.getenv("RESUME_API_URL", "http://localhost:8002")
     try:
         import httpx
-        resp = httpx.post(f"{resume_url}/resume", json={
-            "run_id": a["run_id"],
-            "decision": body.decision.lower(),
-            "hitl_actor": body.director_id,
-        }, timeout=30)
+        resp = httpx.post(
+            f"{resume_url}/resume",
+            json={
+                "run_id": a["run_id"],
+                "decision": body.decision.lower(),
+                "hitl_actor": body.director_id,
+            },
+            timeout=60,
+        )
         resume_result = resp.json()
     except Exception as e:
         resume_result = {"status": "resume_call_failed", "error": str(e)}
 
     return {
         "approval_id": approval_id,
-        "status": a["status"],
+        "status": decision_upper,
         "resume_result": resume_result,
     }
 
@@ -526,24 +575,26 @@ class PORequest(BaseModel):
 
 @app.post("/api/purchase-orders")
 def create_purchase_order(req: PORequest):
-    """POST /api/purchase-orders — create a new PO."""
+    """POST /api/purchase-orders — create a new PO (persists to Supabase)."""
     po_id = f"PO-{uuid.uuid4().hex[:8].upper()}"
+    supplier = SUPPLIERS.get(req.supplier_id, {})
     record = {
         "po_id": po_id,
         "supplier_id": req.supplier_id,
+        "supplier_name": supplier.get("supplier_name", ""),
         "part_id": req.part_id,
         "quantity": req.quantity,
         "approved_by": req.approved_by,
         "status": "CREATED",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    PURCHASE_ORDERS.append(record)
+    insert_purchase_order(record)
     return {"po_id": po_id}
 
 @app.get("/api/purchase-orders")
-def list_purchase_orders():
+def list_purchase_orders_endpoint():
     """GET /api/purchase-orders — list all POs."""
-    return PURCHASE_ORDERS
+    return list_purchase_orders()
 
 
 # ═══════════════════════════════════════════════
@@ -596,7 +647,7 @@ class NotificationRequest(BaseModel):
 
 @app.post("/api/comms/notify")
 def send_notification(req: NotificationRequest):
-    """POST /api/comms/notify — simulated Teams notification (writes to DB)."""
+    """POST /api/comms/notify — simulated Teams notification (persists to Supabase)."""
     notification_id = str(uuid.uuid4())
     record = {
         "notification_id": notification_id,
@@ -608,28 +659,21 @@ def send_notification(req: NotificationRequest):
         "is_read": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    NOTIFICATIONS.append(record)
+    insert_notification(record)
     return {"notification_id": notification_id, "status": "sent"}
 
 @app.get("/api/notifications")
-def list_notifications(role: Optional[str] = Query(None), unread_only: bool = False):
+def list_notifications_endpoint(role: Optional[str] = Query(None), unread_only: bool = False):
     """GET /api/notifications?role=director&unread_only=true"""
-    items = NOTIFICATIONS
-    if role:
-        items = [n for n in items if n["recipient_role"] == role]
-    if unread_only:
-        items = [n for n in items if not n["is_read"]]
-    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    return items
+    return list_notifications(role=role, unread_only=unread_only)
 
 @app.patch("/api/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: str):
+def mark_notification_read_endpoint(notification_id: str):
     """PATCH /api/notifications/:id/read — mark as read."""
-    for n in NOTIFICATIONS:
-        if n["notification_id"] == notification_id:
-            n["is_read"] = True
-            return {"status": "ok"}
-    raise HTTPException(status_code=404, detail="Notification not found")
+    found = mark_notification_read(notification_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "ok"}
 
 
 # ═══════════════════════════════════════════════
@@ -736,7 +780,7 @@ def dashboard_stats():
         "active_suppliers": active_suppliers,
         "red_suppliers": red_suppliers,
         "total_audit_entries": len(AUDIT_LOG),
-        "unread_notifications": len([n for n in NOTIFICATIONS if not n["is_read"]]),
+        "unread_notifications": len([n for n in NOTIFICATIONS if not n.get("is_read", False)]),
     }
 
 # ═══════════════════════════════════════════════
@@ -975,18 +1019,68 @@ def create_event(event: dict):
 
 @app.get("/api/pipeline/runs")
 def list_pipeline_runs():
-    """Get all distinct pipeline runs from audit log."""
-    runs = {}
+    """Get all distinct pipeline runs from audit log (memory + Supabase-hydrated)."""
+    runs: dict = {}
     for entry in AUDIT_LOG:
-        rid = entry["run_id"]
+        rid = entry.get("run_id", "")
+        if not rid:
+            continue
+        ts = entry.get("timestamp", "")
         if rid not in runs:
             runs[rid] = {
                 "run_id": rid,
                 "agents_completed": [],
-                "started_at": entry["timestamp"],
-                "last_update": entry["timestamp"],
+                "started_at": ts,
+                "last_update": ts,
+                "supplier_id": None,
+                "supplier_name": None,
             }
-        runs[rid]["agents_completed"].append(entry["agent_name"])
-        if entry["timestamp"] > runs[rid]["last_update"]:
-            runs[rid]["last_update"] = entry["timestamp"]
-    return list(runs.values())
+        agent_name = entry.get("agent_name", "")
+        # Dedup: only add each agent name once per run
+        if agent_name and agent_name not in runs[rid]["agents_completed"]:
+            runs[rid]["agents_completed"].append(agent_name)
+        if ts and ts > runs[rid]["last_update"]:
+            runs[rid]["last_update"] = ts
+        # Extract supplier info from intake_agent outputs
+        if entry.get("agent_name") == "intake_agent" and not runs[rid]["supplier_name"]:
+            outputs = entry.get("outputs", {}) or {}
+            profile = outputs.get("supplier_profile", {}) or {}
+            runs[rid]["supplier_id"] = (
+                profile.get("supplier_id")
+                or outputs.get("supplier_id")
+                or entry.get("inputs", {}).get("supplier_id")
+            )
+            runs[rid]["supplier_name"] = (
+                profile.get("supplier_name")
+                or entry.get("inputs", {}).get("supplier_id")
+            )
+    result = list(runs.values())
+    result.sort(key=lambda x: x.get("last_update", ""), reverse=True)
+    return result
+
+
+@app.post("/api/reset")
+def reset_in_memory_stores():
+    """Wipe all in-memory stores and reload from Supabase (or start clean).
+
+    Useful in development to clear duplicate/stale data without restarting the server.
+    WARNING: This clears all in-memory approvals, audit entries, POs, and notifications.
+    """
+    AUDIT_LOG.clear()
+    PENDING_APPROVALS.clear()
+    PURCHASE_ORDERS.clear()
+    NOTIFICATIONS.clear()
+
+    # Re-hydrate from Supabase if connected
+    load_from_supabase()
+
+    return {
+        "status": "ok",
+        "message": "In-memory stores cleared and reloaded from Supabase.",
+        "counts": {
+            "audit_log": len(AUDIT_LOG),
+            "approvals": len(PENDING_APPROVALS),
+            "purchase_orders": len(PURCHASE_ORDERS),
+            "notifications": len(NOTIFICATIONS),
+        },
+    }

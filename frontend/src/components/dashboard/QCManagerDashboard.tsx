@@ -6,7 +6,6 @@ import {
   TrendingUp,
   Shield,
   Activity,
-  BarChart3,
   Radar,
   Zap,
   RefreshCw,
@@ -17,6 +16,7 @@ import {
   getPipelineRuns,
   getAuditTrail,
   getDashboardStats,
+  getApprovals,
   triggerAutoScan,
   resetAutoScan,
   type SupplierEvent,
@@ -26,6 +26,7 @@ import {
   type DashboardStats,
   type AutoScanResult,
   type ScanFinding,
+  type Approval,
 } from '../../api'
 import { useGlobalToast } from '../ui/Toast'
 
@@ -33,12 +34,14 @@ export default function QCManagerDashboard() {
   const [selectedTab, setSelectedTab] = useState('scan')
   const [events, setEvents] = useState<SupplierEvent[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [suppliersLoaded, setSuppliersLoaded] = useState(false)
   const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [auditTrail, setAuditTrail] = useState<AuditEntry[]>([])
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [scanResult, setScanResult] = useState<AutoScanResult | null>(null)
   const [isScanning, setIsScanning] = useState(false)
+  const [pendingApprovals, setPendingApprovals] = useState<Approval[]>([])
   const toast = useGlobalToast()
 
   const agentSteps = [
@@ -51,16 +54,19 @@ export default function QCManagerDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [eventsData, suppliersData, runsData, statsData] = await Promise.all([
+      const [eventsData, suppliersData, runsData, statsData, approvalsData] = await Promise.all([
         getEvents().catch(() => []),
         getSuppliers().catch(() => []),
         getPipelineRuns().catch(() => []),
         getDashboardStats().catch(() => null),
+        getApprovals().catch(() => []),
       ])
       setEvents(eventsData)
       setSuppliers(suppliersData)
+      if (suppliersData.length > 0) setSuppliersLoaded(true)
       setPipelineRuns(runsData)
       setStats(statsData)
+      setPendingApprovals(approvalsData.filter((a: Approval) => a.status === 'PENDING'))
 
       // Auto-select latest run
       if (runsData.length > 0 && !selectedRunId) {
@@ -96,7 +102,7 @@ export default function QCManagerDashboard() {
 
   const getSupplierName = (supplierId: string) => {
     const s = suppliers.find(sup => sup.supplier_id === supplierId)
-    return s?.supplier_name || supplierId
+    return s?.supplier_name || 'Unknown Supplier'
   }
 
   const getSeverityBadge = (severity: string) => {
@@ -112,6 +118,10 @@ export default function QCManagerDashboard() {
   const completedAgents = selectedRunId
     ? pipelineRuns.find(r => r.run_id === selectedRunId)?.agents_completed || []
     : []
+
+  const isHitlPaused = selectedRunId
+    ? pendingApprovals.some(a => a.run_id === selectedRunId)
+    : false
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
@@ -137,7 +147,6 @@ export default function QCManagerDashboard() {
           { id: 'scan', label: 'AI Auto-Detect', icon: Radar },
           { id: 'queue', label: 'Event Queue', icon: AlertTriangle },
           { id: 'agents', label: 'Live Agents', icon: Activity },
-          { id: 'metrics', label: 'Metrics', icon: BarChart3 }
         ].map(tab => {
           const Icon = tab.icon
           return (
@@ -418,8 +427,10 @@ export default function QCManagerDashboard() {
               </div>
 
               <div className="space-y-4">
-                {events.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">No events loaded. Start the backend to see real data.</div>
+                {!suppliersLoaded ? (
+                  <div className="text-center py-8 text-gray-400">Loading supplier data...</div>
+                ) : events.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">No events yet. Run an AI scan to detect disruptions.</div>
                 ) : (
                   events.map((event, index) => (
                   <motion.div
@@ -432,11 +443,17 @@ export default function QCManagerDashboard() {
                   >
                       <div className="flex justify-between items-start mb-3">
                       <div>
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-3 flex-wrap gap-y-1">
                             <span className="font-medium text-white">{getSupplierName(event.supplier_id)}</span>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityBadge(event.severity)}`}>
                               {event.severity}
                             </span>
+                            {event.description.startsWith('[AUTO-DETECTED]') && (
+                              <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded text-xs flex items-center space-x-1">
+                                <Radar className="w-3 h-3" />
+                                <span>AI Detected</span>
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm text-gray-400 mt-1">{event.event_type} · {event.delay_days} day delay</div>
                         </div>
@@ -460,9 +477,13 @@ export default function QCManagerDashboard() {
                 <h2 className="text-lg font-semibold text-white">Live Agent Pipeline</h2>
                 {pipelineRuns.length > 0 && (
                   <span className={`px-2 py-1 rounded-full text-xs ${
-                    completedAgents.length >= 5 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-blue-500/20 text-blue-300'
+                    completedAgents.length >= 5 ? 'bg-emerald-500/20 text-emerald-300' :
+                    isHitlPaused ? 'bg-amber-500/20 text-amber-300' :
+                    'bg-blue-500/20 text-blue-300'
                   }`}>
-                    {completedAgents.length >= 5 ? '✅ COMPLETED' : '🔄 PROCESSING'}
+                    {completedAgents.length >= 5 ? '✅ COMPLETED' :
+                     isHitlPaused ? '⏳ AWAITING DIRECTOR APPROVAL' :
+                     '🔄 PROCESSING'}
                   </span>
                 )}
               </div>
@@ -475,11 +496,18 @@ export default function QCManagerDashboard() {
                     onChange={e => setSelectedRunId(e.target.value)}
                     className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
                   >
-                    {pipelineRuns.map(r => (
-                      <option key={r.run_id} value={r.run_id} className="bg-slate-800">
-                        Run {r.run_id.slice(0, 12)}... ({r.agents_completed.length} agents)
-                      </option>
-                    ))}
+                    {pipelineRuns.map((r, idx) => {
+                      const num = pipelineRuns.length - idx
+                      const time = r.started_at
+                        ? new Date(r.started_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : ''
+                      const agents = r.agents_completed.length
+                      return (
+                        <option key={r.run_id} value={r.run_id} className="bg-slate-800">
+                          Pipeline #{num}{time ? ` · ${time}` : ''} ({agents}/5 agents)
+                        </option>
+                      )
+                    })}
                   </select>
                     </div>
               )}
@@ -513,16 +541,20 @@ export default function QCManagerDashboard() {
                         <div className="text-xs text-gray-500">{agent.description}</div>
                             {auditEntry && (
                               <div className="text-xs text-blue-400 mt-1">
-                                Confidence: {(auditEntry.confidence * 100).toFixed(0)}% · {auditEntry.rationale.slice(0, 80)}...
+                                Confidence: {(auditEntry.confidence * 100).toFixed(0)}% · {auditEntry.rationale.length > 80 ? auditEntry.rationale.slice(0, 80) + '…' : auditEntry.rationale}
                               </div>
                             )}
                       </div>
                           <span className={`text-xs px-3 py-1 rounded-full ${
                             isDone ? 'bg-emerald-500/20 text-emerald-300' :
+                            isCurrent && isHitlPaused ? 'bg-amber-500/20 text-amber-300' :
                             isCurrent ? 'bg-blue-500/20 text-blue-300' :
-                          'bg-gray-500/20 text-gray-400'
+                            'bg-gray-500/20 text-gray-400'
                           }`}>
-                            {isDone ? '✅ Complete' : isCurrent ? '⏳ Processing' : '⬜ Waiting'}
+                            {isDone ? '✅ Complete' :
+                             isCurrent && isHitlPaused ? '🔒 Approval Pending' :
+                             isCurrent ? '⏳ Processing' :
+                             '⬜ Waiting'}
                           </span>
                     </motion.div>
                       )

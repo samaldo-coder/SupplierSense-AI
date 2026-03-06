@@ -101,7 +101,7 @@ export default function WarehouseDashboard() {
         event_type: disruptionForm.event_type,
         delay_days: disruptionForm.delay_days,
         severity: disruptionForm.severity,
-        description: disruptionForm.description || `${disruptionForm.event_type} reported for supplier`,
+        description: disruptionForm.description || `${disruptionForm.event_type} reported`,
       })
 
       // 2. Trigger the AI pipeline
@@ -109,15 +109,24 @@ export default function WarehouseDashboard() {
       setPipelineResult(result)
 
       // 3. Show toast based on result
-      if (result.status === 'completed') {
-        toast.success('Pipeline completed — auto-approved, PO created.')
-      } else if (result.status === 'paused_for_hitl') {
-        toast.warning('Pipeline paused — awaiting Director approval.')
-      } else if (result.status === 'error') {
+      if (result.error) {
         toast.error(`Pipeline error: ${result.error ?? 'unknown'}`)
+      } else if (result.paused_for_hitl) {
+        toast.warning('Pipeline escalated — awaiting Director approval.')
+      } else if (result.status === 'completed') {
+        toast.success(`Pipeline auto-approved — PO ${result.po_id} created.`)
       }
 
-      // 4. Refresh data
+      // 4. Reset form for next submission
+      setDisruptionForm({
+        supplier_id: '',
+        event_type: 'DELIVERY_MISS',
+        delay_days: 3,
+        severity: 'MEDIUM',
+        description: '',
+      })
+
+      // 5. Refresh data
       await fetchData()
     } catch (err) {
       console.error('Pipeline trigger failed:', err)
@@ -128,7 +137,7 @@ export default function WarehouseDashboard() {
     }
   }
 
-  const recentEvents = events.slice(0, 5)
+  const recentEvents = [...events].reverse().slice(0, 5)
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
@@ -322,9 +331,6 @@ export default function WarehouseDashboard() {
                          'Auto-Approved & Executed'}
                       </h4>
                       <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
-                        {pipelineResult.run_id && (
-                          <div><span className="text-gray-400">Run ID:</span> <span className="text-white font-mono">{pipelineResult.run_id.slice(0, 16)}...</span></div>
-                        )}
                         {pipelineResult.composite_score != null && (
                           <div><span className="text-gray-400">Risk Score:</span> <span className={`font-bold ${
                             pipelineResult.composite_score >= 70 ? 'text-red-400' :
@@ -478,7 +484,7 @@ export default function WarehouseDashboard() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">At-Risk</span>
-                <span className="text-red-400 font-bold text-lg">{suppliers.filter(s => s.financial_health === 'RED').length}</span>
+                <span className="text-red-400 font-bold text-lg">{suppliers.filter(s => s.financial_health !== 'GREEN').length}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Events Tracked</span>

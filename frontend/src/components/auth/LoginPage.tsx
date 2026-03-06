@@ -23,14 +23,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       id: 'qc_manager', 
       label: 'QC Manager',
       icon: Shield,
-      description: 'Review and approve shipments',
+      description: 'Monitor AI pipeline and run disruption scans',
       gradient: 'from-purple-500 to-pink-500'
     },
     {
       id: 'director',
       label: 'Supply Chain Director', 
       icon: BarChart3,
-      description: 'Analytics and strategic decisions',
+      description: 'Approve AI escalations and oversee supplier risk',
       gradient: 'from-emerald-500 to-teal-500'
     }
   ]

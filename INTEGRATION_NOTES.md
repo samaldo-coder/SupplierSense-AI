@@ -112,6 +112,64 @@
 - **Status**: ✅ RESOLVED
 - **Fix**: Created `db/schema.sql` and `db/seed.sql`. Backend uses in-memory data mirroring the SQL seed for demo purposes.
 
+### [DB] Supabase not connected — in-memory only
+- **Status**: ✅ RESOLVED (2026-03-06)
+- **Fix**: Added full Supabase write-through persistence. See setup below.
+
+---
+
+## Supabase Setup (one-time)
+
+### 1. Create a Supabase project
+- Go to https://supabase.com → New project
+- Note your **Project URL** and **service_role key** (Settings → API)
+
+### 2. Run the schema
+In the Supabase SQL Editor, paste and run `db/schema.sql`.
+
+Then paste and run the seed data from `db/seed.sql`.
+
+Then disable RLS for server-side access (since we use service_role key):
+```sql
+ALTER TABLE audit_log            DISABLE ROW LEVEL SECURITY;
+ALTER TABLE pending_approvals    DISABLE ROW LEVEL SECURITY;
+ALTER TABLE purchase_orders      DISABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications        DISABLE ROW LEVEL SECURITY;
+ALTER TABLE suppliers            DISABLE ROW LEVEL SECURITY;
+ALTER TABLE parts                DISABLE ROW LEVEL SECURITY;
+ALTER TABLE approved_vendor_list DISABLE ROW LEVEL SECURITY;
+ALTER TABLE supplier_events      DISABLE ROW LEVEL SECURITY;
+ALTER TABLE timeseries           DISABLE ROW LEVEL SECURITY;
+```
+
+### 3. Add credentials to `.env`
+```bash
+SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### 4. Install the Python client
+```bash
+pip install supabase
+```
+
+### 5. What persists to Supabase
+| Table | When written | Hydrated on startup |
+|---|---|---|
+| `audit_log` | Every agent decision | ✅ Yes |
+| `pending_approvals` | Pipeline pauses for HITL | ✅ Yes |
+| `purchase_orders` | Agent 5 executes a swap | ✅ Yes |
+| `notifications` | Approvals + decisions | ✅ Yes |
+
+Static seed tables (`suppliers`, `parts`, `avl`, `supplier_events`) are
+kept in-memory from `main.py` for speed; they are read from `db/seed.sql`
+only when initially seeding Supabase.
+
+### 6. Fallback behaviour
+If `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are absent, the app runs
+entirely in-memory (no data loss during the session, resets on restart).
+This keeps local development seamless without needing Supabase credentials.
+
 ---
 
 ## Verification Results (2026-03-04):

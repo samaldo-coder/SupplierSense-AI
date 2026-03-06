@@ -13,22 +13,28 @@ logger = logging.getLogger(__name__)
 
 def _derive_forecast_trend(forecast: dict) -> str:
     """
-    forecast_trend logic (from AGENTS.md Part 7):
-    if predicted_delay (T+7) > predicted_delay (T+1) by >20% → "WORSENING"
-    if delta < -20% → "IMPROVING"
-    else → "STABLE"
+    forecast_trend logic — four tiers:
 
-    Since P5 currently returns a single predicted_delay, we estimate from
-    the CI width: wider CI at higher predicted delay = WORSENING.
+    WORSENING  — actively getting worse (predicted high AND wide CI = growing uncertainty)
+    ELEVATED   — chronically high in absolute terms even if not spiking.
+                 A supplier consistently at 7+ days is a supply chain risk
+                 regardless of whether the trend is changing.
+    IMPROVING  — predicted delay is low and confidence is high
+    STABLE     — everything else (low/medium delay, moderate uncertainty)
     """
     predicted = forecast.get("predicted_delay", 3.0)
     upper = forecast.get("upper_ci", predicted + 1)
     lower = forecast.get("lower_ci", predicted - 1)
-
-    # Heuristic: if predicted delay is high and CI is wide, trend is worsening
     ci_width = upper - lower
+
+    # Actively deteriorating: high delay AND growing uncertainty
     if predicted > 5 and ci_width > 4:
         return "WORSENING"
+    # Chronically elevated: absolute delay is bad even if trend is flat.
+    # This catches suppliers who are always late — their "stable" 8-day delay
+    # is still a structural supply chain problem.
+    elif predicted >= 7:
+        return "ELEVATED"
     elif predicted < 2 and ci_width < 2:
         return "IMPROVING"
     else:
@@ -86,12 +92,17 @@ def run_history_agent(state: AgentState) -> AgentState:
         forecast_confidence = _derive_forecast_confidence(forecast)
         anomaly_votes = anomaly.get("votes", 0)
         anomaly_flagged = anomaly.get("anomaly_flag", False)
+        chronic_lateness = anomaly.get("chronic_lateness", False)
         avg_delay = forecast.get("predicted_delay", float(delay_days))
 
-        # Step 4: Compute risk index
+        # Step 4: Compute risk index — chronic lateness adds a floor to risk
         risk_index_score = _compute_risk_index(
             forecast_confidence, anomaly_votes, avg_delay
         )
+        # Boost risk index for chronically late suppliers so they can't hide
+        # behind a "STABLE" trend score when their absolute delay is bad
+        if chronic_lateness:
+            risk_index_score = min(100.0, risk_index_score + 20.0)
 
         result = HistoryResult(
             avg_delay_30d=round(avg_delay, 2),
@@ -99,7 +110,8 @@ def run_history_agent(state: AgentState) -> AgentState:
             forecast_confidence=round(forecast_confidence, 4),
             anomaly_votes=anomaly_votes,
             anomaly_flagged=anomaly_flagged,
-            risk_index_score=risk_index_score,
+            risk_index_score=round(risk_index_score, 2),
+            chronic_lateness=chronic_lateness,
         )
 
         # Step 5: Log audit

@@ -38,11 +38,12 @@ class QualityResult(BaseModel):
 # ─── Agent 3 Output ──────────────────────────────────────────
 class HistoryResult(BaseModel):
     avg_delay_30d: float
-    forecast_trend: Literal["WORSENING", "STABLE", "IMPROVING"]
+    forecast_trend: Literal["WORSENING", "ELEVATED", "STABLE", "IMPROVING"]
     forecast_confidence: float      # 0.0–1.0 (from P5 AutoARIMA)
     anomaly_votes: int              # 0–3 (from P5 ensemble)
     anomaly_flagged: bool
     risk_index_score: float         # 0–100
+    chronic_lateness: bool = False  # True if supplier avg delay > 80% of fleet peers
 
 
 # ─── Agent 4 Output ──────────────────────────────────────────

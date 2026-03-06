@@ -35,9 +35,12 @@ def anomaly_score() -> float:
 
 def anomaly_score_for_supplier(supplier_id: str) -> dict:
     """Per-supplier anomaly detection using a 3-method ensemble:
-    1. Z-score (>2.5 std)
-    2. MAD (Median Absolute Deviation, >3.0)
-    3. Percentile (>97th percentile)
+    1. Z-score vs own history (>2.5 std) — detects sudden spikes
+    2. MAD vs own history (>3.0) — robust spike detection
+    3. Cross-supplier fleet percentile (>80th pctile of peer averages)
+       — detects CHRONIC lateness that self-comparison misses entirely.
+       A supplier always late by 10 days looks "normal" compared to itself
+       but is clearly an outlier compared to the fleet.
     Returns votes (0-3) and individual method values.
     """
     csv_path = _find_timeseries()
@@ -50,19 +53,18 @@ def anomaly_score_for_supplier(supplier_id: str) -> dict:
             "zscore_val": 0.0,
             "mad_val": 0.0,
             "percentile_val": 0.5,
+            "chronic_lateness": False,
         }
 
     df = pd.read_csv(csv_path)
 
     # Map supplier_id to the format used in timeseries.csv
-    # The timeseries uses short IDs like S1-S10, we need to map UUID to those
     supplier_map = _get_supplier_map()
     short_id = supplier_map.get(supplier_id, supplier_id)
 
     supplier_df = df[df["supplier_id"] == short_id]
 
     if supplier_df.empty:
-        # Try direct match (maybe timeseries already uses UUIDs)
         supplier_df = df[df["supplier_id"] == supplier_id]
 
     if supplier_df.empty or len(supplier_df) < 10:
@@ -74,26 +76,36 @@ def anomaly_score_for_supplier(supplier_id: str) -> dict:
             "zscore_val": 0.0,
             "mad_val": 0.0,
             "percentile_val": 0.5,
+            "chronic_lateness": False,
         }
 
     delays = supplier_df["delay_days"].values
     latest = delays[-1] if len(delays) > 0 else 0
 
-    # Method 1: Z-score
+    # Method 1: Z-score vs own history — catches sudden spikes
     mean_val = np.mean(delays)
     std_val = np.std(delays)
     zscore_val = (latest - mean_val) / std_val if std_val > 0 else 0.0
     zscore_flag = abs(zscore_val) > 2.5
 
-    # Method 2: MAD
+    # Method 2: MAD vs own history — robust spike detection
     median_val = np.median(delays)
     mad = np.median(np.abs(delays - median_val))
     mad_val = (latest - median_val) / (mad * 1.4826) if mad > 0 else 0.0
     mad_flag = abs(mad_val) > 3.0
 
-    # Method 3: Percentile
-    percentile_val = float(np.mean(delays <= latest))
-    percentile_flag = percentile_val > 0.97
+    # Method 3: Cross-supplier fleet comparison — catches CHRONIC lateness.
+    # A supplier that is always slow looks "normal" to methods 1 & 2 (their own
+    # history is their baseline). This method compares each supplier's average
+    # delay against ALL suppliers' averages. If this supplier is worse than 80%
+    # of their peers on average, they are a structural problem — not just a spike.
+    fleet_avg_per_supplier = df.groupby("supplier_id")["delay_days"].mean()
+    supplier_avg = float(np.mean(delays))
+    # What fraction of peer suppliers have a LOWER average delay than this one?
+    percentile_val = float(np.mean(fleet_avg_per_supplier <= supplier_avg))
+    # >0.80 = worse than 80% of suppliers on average = chronic underperformer
+    percentile_flag = percentile_val > 0.80
+    chronic_lateness = percentile_flag
 
     votes = int(zscore_flag) + int(mad_flag) + int(percentile_flag)
 
@@ -105,6 +117,7 @@ def anomaly_score_for_supplier(supplier_id: str) -> dict:
         "zscore_val": round(float(zscore_val), 4),
         "mad_val": round(float(mad_val), 4),
         "percentile_val": round(float(percentile_val), 4),
+        "chronic_lateness": bool(chronic_lateness),
     }
 
 

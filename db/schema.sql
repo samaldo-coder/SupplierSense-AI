@@ -1,6 +1,21 @@
 -- SupplyGuard AI — Full Database Schema
 -- Compatible with Supabase (Postgres) free tier
 -- Run this in Supabase SQL editor or via psql
+--
+-- IMPORTANT: After running this schema, run the following to disable RLS
+-- for service-role access (backend uses SUPABASE_SERVICE_ROLE_KEY):
+--
+--   ALTER TABLE audit_log       DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE pending_approvals DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE purchase_orders DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE notifications   DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE suppliers       DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE parts           DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE approved_vendor_list DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE supplier_events DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE timeseries      DISABLE ROW LEVEL SECURITY;
+--
+-- Or use the service_role key in your .env (it bypasses RLS automatically).
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -102,11 +117,11 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
 -- TABLE: purchase_orders
 -- ═══════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS purchase_orders (
-    po_id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    po_id          TEXT PRIMARY KEY,   -- format: PO-XXXXXXXX (set by application)
     supplier_id    UUID NOT NULL REFERENCES suppliers(supplier_id),
     part_id        UUID NOT NULL REFERENCES parts(part_id),
     quantity       INT NOT NULL,
-    approved_by    TEXT NOT NULL,
+    approved_by    TEXT NOT NULL DEFAULT 'system',
     status         TEXT NOT NULL DEFAULT 'CREATED' CHECK (status IN ('CREATED', 'CONFIRMED', 'SHIPPED', 'DELIVERED')),
     created_at     TIMESTAMPTZ DEFAULT now()
 );

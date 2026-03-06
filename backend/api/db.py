@@ -215,22 +215,27 @@ def get_audit_trail(run_id: str) -> list:
 # ─────────────────────────────────────────────────────────────
 
 def insert_approval(record: dict) -> dict:
-    """Insert approval into in-memory store and Supabase."""
+    """Insert approval into in-memory store and Supabase.
+
+    Uses upsert (on_conflict=approval_id) so re-runs of the same pipeline
+    don't blow up the run_id UNIQUE constraint with a duplicate insert.
+    """
     PENDING_APPROVALS[record["approval_id"]] = record
 
     sb = _sb()
     if sb:
         try:
-            sb.table("pending_approvals").insert({
+            sb.table("pending_approvals").upsert({
                 "approval_id": record["approval_id"],
                 "run_id": record["run_id"],
                 "state_json": record.get("state_json", {}),
                 "summary": record.get("summary", ""),
-                "recommended_supplier_id": record.get("recommended_supplier_id"),
+                "recommended_supplier_id": record.get("recommended_supplier_id") or None,
                 "status": record.get("status", "PENDING"),
-            }).execute()
+            }, on_conflict="approval_id").execute()
+            logger.info(f"[DB] Approval {record['approval_id']} upserted to Supabase (run={record['run_id']})")
         except Exception as e:
-            logger.warning(f"[DB] Supabase pending_approvals insert failed: {e}")
+            logger.error(f"[DB] Supabase pending_approvals upsert FAILED: {e}")
 
     return record
 
@@ -253,9 +258,10 @@ def update_approval(approval_id: str, updates: dict) -> dict | None:
         }
         if db_updates:
             try:
-                sb.table("pending_approvals").update(db_updates).eq("approval_id", approval_id).execute()
+                result = sb.table("pending_approvals").update(db_updates).eq("approval_id", approval_id).execute()
+                logger.info(f"[DB] Approval {approval_id} updated in Supabase → status={updates.get('status')}")
             except Exception as e:
-                logger.warning(f"[DB] Supabase pending_approvals update failed: {e}")
+                logger.error(f"[DB] Supabase pending_approvals update FAILED for {approval_id}: {e}")
 
     return record
 

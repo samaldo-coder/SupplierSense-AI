@@ -1084,3 +1084,64 @@ def reset_in_memory_stores():
             "notifications": len(NOTIFICATIONS),
         },
     }
+
+
+@app.get("/api/debug/supabase")
+def debug_supabase():
+    """Check Supabase connectivity and row counts in every key table.
+
+    Open http://localhost:3001/api/debug/supabase in your browser to diagnose
+    whether the backend is actually writing to the database.
+    """
+    from api.supabase_client import get_supabase  # type: ignore
+    sb = get_supabase()
+
+    if sb is None:
+        return {
+            "connected": False,
+            "reason": "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set / supabase package missing",
+            "in_memory": {
+                "audit_log": len(AUDIT_LOG),
+                "approvals": len(PENDING_APPROVALS),
+                "purchase_orders": len(PURCHASE_ORDERS),
+                "notifications": len(NOTIFICATIONS),
+            },
+        }
+
+    counts = {}
+    errors = {}
+    for table in ["pending_approvals", "audit_log", "purchase_orders", "notifications",
+                  "pipeline_runs", "suppliers", "supplier_events"]:
+        try:
+            result = sb.table(table).select("*", count="exact", head=True).execute()
+            counts[table] = result.count
+        except Exception as e:
+            errors[table] = str(e)
+
+    # Also fetch the 3 most recent pending_approvals so you can verify content
+    recent_approvals = []
+    try:
+        rows = (
+            sb.table("pending_approvals")
+            .select("approval_id, run_id, status, decided_at, created_at")
+            .order("created_at", desc=True)
+            .limit(3)
+            .execute()
+            .data or []
+        )
+        recent_approvals = rows
+    except Exception as e:
+        errors["recent_approvals_fetch"] = str(e)
+
+    return {
+        "connected": True,
+        "supabase_row_counts": counts,
+        "in_memory": {
+            "audit_log": len(AUDIT_LOG),
+            "approvals": len(PENDING_APPROVALS),
+            "purchase_orders": len(PURCHASE_ORDERS),
+            "notifications": len(NOTIFICATIONS),
+        },
+        "recent_pending_approvals": recent_approvals,
+        "errors": errors,
+    }

@@ -11,6 +11,7 @@ import {
   Package,
   XCircle,
   Radar,
+  Trash2,
 } from 'lucide-react'
 import {
   getApprovals,
@@ -20,6 +21,7 @@ import {
   getEvents,
   getPipelineRuns,
   triggerAutoScan,
+  resetBackendData,
   type Approval,
   type DashboardStats,
   type Supplier,
@@ -46,6 +48,7 @@ export default function DirectorDashboard() {
   const [decisionNote, setDecisionNote] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isScanning, setIsScanning] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -123,6 +126,7 @@ export default function DirectorDashboard() {
       forecastTrend: history?.forecast_trend as string | undefined,
       anomalyVotes: history?.anomaly_votes as number | undefined,
       riskIndex: history?.risk_index_score as number | undefined,
+      chronicLateness: history?.chronic_lateness as boolean | undefined,
     }
   }
 
@@ -220,6 +224,33 @@ export default function DirectorDashboard() {
               <Radar className="w-4 h-4" />
             </motion.div>
             <span>{isScanning ? 'Scanning...' : 'AI Scan'}</span>
+          </motion.button>
+          <motion.button
+            onClick={async () => {
+              if (!confirm('Clear all in-memory pipeline data (audit log, approvals, POs, notifications) and reload from Supabase?')) return
+              setIsResetting(true)
+              try {
+                const result = await resetBackendData()
+                await fetchData()
+                toast.success(`Data cleared. Reloaded: ${result.counts.audit_log} audit, ${result.counts.approvals} approvals, ${result.counts.purchase_orders} POs.`)
+              } catch {
+                toast.error('Reset failed')
+              } finally {
+                setIsResetting(false)
+              }
+            }}
+            disabled={isResetting}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              isResetting
+                ? 'bg-red-500/20 text-red-300 cursor-wait'
+                : 'bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20'
+            }`}
+            whileHover={!isResetting ? { scale: 1.05 } : {}}
+            whileTap={!isResetting ? { scale: 0.95 } : {}}
+            title="Clear duplicate/stale in-memory data"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>{isResetting ? 'Resetting...' : 'Reset Data'}</span>
           </motion.button>
           {pendingApprovals.length > 0 && (
             <motion.div
@@ -365,7 +396,9 @@ export default function DirectorDashboard() {
                               {detail.certValid ? '✅ Valid' : '❌ Expired/Missing'}
                             </div>
                             {detail.qualityScore != null && (
-                              <div className="text-xs text-gray-400 mt-0.5">Score: {detail.qualityScore.toFixed(0)}/100</div>
+                              <div className={`text-xs mt-0.5 ${detail.qualityScore >= 70 ? 'text-red-400' : detail.qualityScore >= 40 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                Quality risk: {detail.qualityScore.toFixed(0)}/100
+                              </div>
                             )}
                           </div>
                         )}
@@ -374,13 +407,22 @@ export default function DirectorDashboard() {
                             <div className="text-xs text-gray-400">Forecast Trend</div>
                             <div className={`text-sm font-medium ${
                               detail.forecastTrend === 'WORSENING' ? 'text-red-400' :
+                              detail.forecastTrend === 'ELEVATED' ? 'text-amber-400' :
                               detail.forecastTrend === 'IMPROVING' ? 'text-emerald-400' : 'text-gray-300'
                             }`}>
                               {detail.forecastTrend === 'WORSENING' ? '📈 Worsening' :
+                               detail.forecastTrend === 'ELEVATED' ? '⚠️ Elevated (chronic)' :
                                detail.forecastTrend === 'IMPROVING' ? '📉 Improving' : '➡️ Stable'}
                             </div>
                             {detail.anomalyVotes != null && (
-                              <div className="text-xs text-gray-400 mt-0.5">Anomaly votes: {detail.anomalyVotes}/3</div>
+                              <div className={`text-xs mt-0.5 ${detail.anomalyVotes >= 2 ? 'text-red-400' : detail.anomalyVotes === 1 ? 'text-amber-400' : 'text-gray-400'}`}>
+                                {detail.anomalyVotes}/3 detectors flagged
+                              </div>
+                            )}
+                            {detail.chronicLateness && (
+                              <div className="text-xs mt-1 text-amber-400 font-medium">
+                                ⏱ Worse than 80% of fleet peers
+                              </div>
                             )}
                           </div>
                         )}
@@ -472,23 +514,31 @@ export default function DirectorDashboard() {
                 <div className="glass-card p-6">
                   <h3 className="text-lg font-semibold text-white mb-4">Decision History</h3>
                   <div className="space-y-3">
-                    {decidedApprovals.map((a, idx) => (
-                      <div key={a.approval_id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <span className="text-sm text-white font-medium">
-                            Pipeline #{decidedApprovals.length - idx}
-                          </span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            a.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'
-                          }`}>
-                            {a.status}
-                          </span>
+                    {decidedApprovals.map((a, idx) => {
+                      const detail = getPipelineDetail(a)
+                      return (
+                        <div key={a.approval_id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
+                          <div className="flex items-center space-x-3 min-w-0">
+                            <span className="text-sm text-white font-medium shrink-0">
+                              Pipeline #{decidedApprovals.length - idx}
+                            </span>
+                            {detail?.supplierName && (
+                              <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-xs font-medium truncate">
+                                {detail.supplierName}
+                              </span>
+                            )}
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${
+                              a.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'
+                            }`}>
+                              {a.status}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-400 shrink-0 ml-3">
+                            {fmt(a.decided_at ?? a.created_at)}
+                          </div>
                         </div>
-                        <div className="text-sm text-gray-400">
-                          {fmt(a.decided_at ?? a.created_at)}
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -520,6 +570,11 @@ export default function DirectorDashboard() {
                     <span className="text-white font-semibold">
                       Pipeline #{pipelineRuns.length - idx}
                     </span>
+                    {run.supplier_name && (
+                      <span className="ml-2 px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-xs font-medium">
+                        {run.supplier_name}
+                      </span>
+                    )}
                     <span className="ml-3 text-sm text-gray-400">
                       {fmt(run.started_at)} · {run.agents_completed.length}/{agentStepNames.length} agents
                     </span>

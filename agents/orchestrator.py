@@ -20,25 +20,30 @@ BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:3001")
 
 
 def _post_approval_direct(run_id: str, state: AgentState) -> bool:
-    """Try to write the approval directly to the in-memory store (avoids HTTP self-deadlock).
-    Returns True if successful, False if direct access not available."""
+    """Write the approval via api.db (in-process write-through to Supabase).
+    Returns True if successful, False if db layer is not importable."""
     try:
-        from api.main import PENDING_APPROVALS, NOTIFICATIONS
+        import api.db as db  # type: ignore
+
         approval_id = str(uuid.uuid4())
-        PENDING_APPROVALS[approval_id] = {
+        created_at = datetime.now(timezone.utc).isoformat()
+
+        db.insert_approval({
             "approval_id": approval_id,
             "run_id": run_id,
             "state_json": state.model_dump(),
             "summary": state.decision.rationale if state.decision else "",
-            "recommended_supplier_id": state.decision.recommended_supplier_id if state.decision else None,
+            "recommended_supplier_id": (
+                state.decision.recommended_supplier_id if state.decision else None
+            ),
             "status": "PENDING",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_at,
             "decided_at": None,
             "decided_by": None,
             "decision_note": None,
-        }
-        # Also create a notification for the director
-        NOTIFICATIONS.append({
+        })
+
+        db.insert_notification({
             "notification_id": str(uuid.uuid4()),
             "recipient_role": "director",
             "notification_type": "approval_required",
@@ -46,12 +51,22 @@ def _post_approval_direct(run_id: str, state: AgentState) -> bool:
             "body": state.decision.rationale if state.decision else "Approval needed",
             "metadata": {"run_id": run_id, "approval_id": approval_id},
             "is_read": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_at,
         })
-        logger.info(f"[{run_id}] Approval request written directly (approval_id={approval_id})")
+
+        logger.info(f"[{run_id}] Approval + notification written via db layer (approval_id={approval_id})")
         return True
     except ImportError:
         return False
+
+
+def _db_track(run_id: str, **kwargs) -> None:
+    """Non-blocking pipeline_runs upsert — swallows all errors."""
+    try:
+        import api.db as db  # type: ignore
+        db.upsert_pipeline_run(run_id=run_id, **kwargs)
+    except Exception:
+        pass
 
 
 def run_pipeline(event_dict: dict) -> AgentState:
@@ -80,6 +95,7 @@ def run_pipeline(event_dict: dict) -> AgentState:
         )
 
     state = AgentState(event_id=event.event_id, run_id=run_id)
+    _db_track(run_id, event_id=event.event_id, status="running", current_step="intake")
 
     # ─── Agent 1: Intake ─────────────────────────────────────
     try:
@@ -111,10 +127,12 @@ def run_pipeline(event_dict: dict) -> AgentState:
     # ─── Agent 4: Decision ───────────────────────────────────
     try:
         logger.info(f"[{run_id}] Running Agent 4: Decision")
+        _db_track(run_id, status="running", current_step="decision")
         state = run_decision_agent(state)
     except Exception as e:
         logger.error(f"[{run_id}] Agent 4 failed: {e}")
         state.error = f"Decision agent failed: {e}"
+        _db_track(run_id, status="failed", current_step="decision")
         return state
 
     # ─── HITL Check ──────────────────────────────────────────
@@ -123,6 +141,15 @@ def run_pipeline(event_dict: dict) -> AgentState:
             f"[{run_id}] HITL required — action={state.decision.action}. "
             f"Pausing pipeline."
         )
+        _db_track(
+            run_id,
+            status="awaiting_approval",
+            current_step="hitl",
+            risk_score=float(state.decision.composite_score or 0),
+            recommendation_summary=state.decision.rationale or "",
+            final_decision=state.decision.action or "",
+        )
+
         # Try direct in-memory write first (avoids HTTP self-deadlock)
         if not _post_approval_direct(run_id, state):
             # Fallback: HTTP call (only works when backend is a separate process)
@@ -152,9 +179,19 @@ def run_pipeline(event_dict: dict) -> AgentState:
     # ─── Agent 5: Executor (auto-approve path) ──────────────
     try:
         logger.info(f"[{run_id}] Auto-approved — running Agent 5: Executor")
+        _db_track(run_id, status="running", current_step="executor")
         state = run_executor_agent(state)
+        _db_track(
+            run_id,
+            status="completed",
+            current_step="done",
+            risk_score=float(state.decision.composite_score if state.decision else 0),
+            recommendation_summary=state.decision.rationale if state.decision else "",
+            final_decision=state.executor.po_id if state.executor else "auto_approved",
+        )
     except Exception as e:
         logger.error(f"[{run_id}] Agent 5 failed: {e}")
         state.error = f"Executor agent failed: {e}"
+        _db_track(run_id, status="failed", current_step="executor")
 
     return state

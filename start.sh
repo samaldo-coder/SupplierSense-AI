@@ -28,7 +28,7 @@ for candidate in python3 /opt/anaconda3/bin/python python; do
 done
 
 if [ -z "$PYTHON" ]; then
-    echo "✗ No Python with pandas found. Install deps: pip install pandas fastapi uvicorn httpx pydantic tenacity"
+    echo "✗ No Python with pandas found. Install deps: pip install -r requirements.txt"
     exit 1
 fi
 

@@ -1,11 +1,15 @@
 # agents/tools/audit_tools.py
 # Tools wrapping the audit trail (immutable log of every agent decision).
 #
-# When running in-process with the backend, writes directly to AUDIT_LOG.
-# When running standalone, falls back to HTTP calls.
+# Write path (fastest → slowest):
+#   1. Direct import of api.db.insert_audit_entry (in-process, no HTTP)
+#   2. HTTP POST to /api/audit (cross-process fallback)
+#
+# Read path:
+#   1. Direct import of api.db.get_audit_trail (in-process)
+#   2. HTTP GET /api/audit/:run_id (cross-process fallback)
 
 import os
-import uuid
 import logging
 from datetime import datetime, timezone
 
@@ -14,11 +18,11 @@ logger = logging.getLogger(__name__)
 BASE_URL = os.getenv("BACKEND_API_URL", "http://localhost:3001")
 
 
-def _get_audit_log():
-    """Try to import the in-memory AUDIT_LOG from the backend."""
+def _db():
+    """Try to import the db layer (works when running in-process with the backend)."""
     try:
-        from api.main import AUDIT_LOG
-        return AUDIT_LOG
+        import api.db as db  # type: ignore
+        return db
     except ImportError:
         return None
 
@@ -45,13 +49,10 @@ def log_audit_decision(
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    # ── Direct in-memory access (avoids HTTP self-deadlock) ──
-    audit_log = _get_audit_log()
-    if audit_log is not None:
-        entry_id = str(uuid.uuid4())
-        entry["entry_id"] = entry_id
-        audit_log.append(entry)
-        return entry
+    # ── Direct in-process access (writes to memory + Supabase) ──
+    db = _db()
+    if db is not None:
+        return db.insert_audit_entry(entry)
 
     # ── Fallback: HTTP call to backend ──
     try:
@@ -63,18 +64,17 @@ def log_audit_decision(
         return entry
     except Exception as e:
         logger.warning(f"Audit log POST failed ({agent_name}): {e} — saving locally")
+        import uuid
         entry["entry_id"] = f"LOCAL-{run_id}-{agent_name}"
         return entry
 
 
 def get_audit_trail(run_id: str) -> list:
     """Fetch full ordered audit trail for a pipeline run."""
-    # ── Direct in-memory access ──
-    audit_log = _get_audit_log()
-    if audit_log is not None:
-        trail = [a for a in audit_log if a["run_id"] == run_id]
-        trail.sort(key=lambda x: x.get("timestamp", ""))
-        return trail
+    # ── Direct in-process access ──
+    db = _db()
+    if db is not None:
+        return db.get_audit_trail(run_id)
 
     # ── Fallback: HTTP call ──
     try:

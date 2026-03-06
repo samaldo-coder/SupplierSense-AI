@@ -69,9 +69,11 @@ def run_decision_agent(state: AgentState) -> AgentState:
         cert_valid = q.cert_valid if q else True
         forecast_trend = h.forecast_trend if h else "STABLE"
         anomaly_votes = h.anomaly_votes if h else 0
+        chronic_lateness = h.chronic_lateness if h else False
 
         action, hitl_required = determine_action_and_hitl(
-            composite_score, cert_valid, financial_health, forecast_trend, anomaly_votes
+            composite_score, cert_valid, financial_health, forecast_trend,
+            anomaly_votes, chronic_lateness
         )
 
         # Step 4: Query AVL for alternative suppliers

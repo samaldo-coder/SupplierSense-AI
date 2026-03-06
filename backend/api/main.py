@@ -21,6 +21,11 @@ import uuid
 import json
 import os
 import logging
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from project root so OPENAI_API_KEY is available to agents running in-process
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 logger = logging.getLogger("supplyguard")
 

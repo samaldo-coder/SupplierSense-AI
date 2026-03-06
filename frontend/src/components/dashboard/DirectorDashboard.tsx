@@ -340,9 +340,6 @@ export default function DirectorDashboard() {
                       </div>
                       <p className="text-white mt-2">{approval.summary || 'Agent pipeline requires director approval'}</p>
                     </div>
-                    <div className="text-right text-sm text-gray-400">
-                      {new Date(approval.created_at).toLocaleString()}
-                    </div>
                   </div>
 
                   {/* Risk Score Gauge + Detail Grid */}

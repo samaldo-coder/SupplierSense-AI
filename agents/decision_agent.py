@@ -6,7 +6,7 @@
 import json
 import logging
 from contracts.schemas import DecisionResult, AgentState
-from agents.tools.erp_tools import query_avl, get_parts_by_supplier
+from agents.tools.erp_tools import query_avl, get_parts_by_supplier, get_supplier_profile
 from agents.tools.audit_tools import log_audit_decision
 from agents.utils import (
     compute_composite_score,
@@ -87,6 +87,15 @@ def run_decision_agent(state: AgentState) -> AgentState:
         rationale = ""
 
         if avl_entries:
+            # Enrich AVL entries with supplier names for human-readable output
+            for alt in avl_entries:
+                if "supplier_name" not in alt:
+                    try:
+                        profile = get_supplier_profile(alt["supplier_id"])
+                        alt["supplier_name"] = profile.get("supplier_name", alt["supplier_id"])
+                    except Exception:
+                        alt["supplier_name"] = alt["supplier_id"]
+
             # Score alternatives deterministically first
             scored = [
                 (alt, _score_alternative_supplier(alt))
@@ -108,7 +117,7 @@ Given the following assessment data:
 - Intake: {intake.model_dump_json()}
 - Quality Assessment: {q.model_dump_json() if q else '{}'}
 - Supplier History: {h.model_dump_json() if h else '{}'}
-- Available Alternative Suppliers (AVL): {json.dumps(avl_entries)}
+- Available Alternative Suppliers (AVL, each entry includes supplier_name): {json.dumps(avl_entries)}
 - Computed Composite Risk Score: {composite_score:.1f}/100
 
 Task:
@@ -135,8 +144,14 @@ Return valid JSON:
 
                 except Exception as llm_err:
                     logger.warning(f"Decision LLM failed: {llm_err} — using fallback")
+                    # Resolve supplier name so rationale is human-readable
+                    try:
+                        alt_profile = get_supplier_profile(recommended_supplier_id)
+                        alt_name = alt_profile.get("supplier_name", recommended_supplier_id)
+                    except Exception:
+                        alt_name = recommended_supplier_id
                     rationale = (
-                        f"Recommended because supplier {recommended_supplier_id} has the best "
+                        f"Recommended because {alt_name} has the best "
                         f"combined score for lead time, cost, and certification status."
                     )
                     result = DecisionResult(

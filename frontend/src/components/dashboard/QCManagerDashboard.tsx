@@ -6,7 +6,6 @@ import {
   TrendingUp,
   Shield,
   Activity,
-  BarChart3,
   Radar,
   Zap,
   RefreshCw,
@@ -33,6 +32,7 @@ export default function QCManagerDashboard() {
   const [selectedTab, setSelectedTab] = useState('scan')
   const [events, setEvents] = useState<SupplierEvent[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [suppliersLoaded, setSuppliersLoaded] = useState(false)
   const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [auditTrail, setAuditTrail] = useState<AuditEntry[]>([])
@@ -59,6 +59,7 @@ export default function QCManagerDashboard() {
       ])
       setEvents(eventsData)
       setSuppliers(suppliersData)
+      if (suppliersData.length > 0) setSuppliersLoaded(true)
       setPipelineRuns(runsData)
       setStats(statsData)
 
@@ -96,7 +97,7 @@ export default function QCManagerDashboard() {
 
   const getSupplierName = (supplierId: string) => {
     const s = suppliers.find(sup => sup.supplier_id === supplierId)
-    return s?.supplier_name || supplierId
+    return s?.supplier_name || 'Unknown Supplier'
   }
 
   const getSeverityBadge = (severity: string) => {
@@ -137,7 +138,6 @@ export default function QCManagerDashboard() {
           { id: 'scan', label: 'AI Auto-Detect', icon: Radar },
           { id: 'queue', label: 'Event Queue', icon: AlertTriangle },
           { id: 'agents', label: 'Live Agents', icon: Activity },
-          { id: 'metrics', label: 'Metrics', icon: BarChart3 }
         ].map(tab => {
           const Icon = tab.icon
           return (
@@ -418,8 +418,10 @@ export default function QCManagerDashboard() {
               </div>
 
               <div className="space-y-4">
-                {events.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">No events loaded. Start the backend to see real data.</div>
+                {!suppliersLoaded ? (
+                  <div className="text-center py-8 text-gray-400">Loading supplier data...</div>
+                ) : events.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">No events yet. Run an AI scan to detect disruptions.</div>
                 ) : (
                   events.map((event, index) => (
                   <motion.div
@@ -475,11 +477,18 @@ export default function QCManagerDashboard() {
                     onChange={e => setSelectedRunId(e.target.value)}
                     className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm"
                   >
-                    {pipelineRuns.map(r => (
-                      <option key={r.run_id} value={r.run_id} className="bg-slate-800">
-                        Run {r.run_id.slice(0, 12)}... ({r.agents_completed.length} agents)
-                      </option>
-                    ))}
+                    {pipelineRuns.map((r, idx) => {
+                      const num = pipelineRuns.length - idx
+                      const time = r.started_at
+                        ? new Date(r.started_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : ''
+                      const agents = r.agents_completed.length
+                      return (
+                        <option key={r.run_id} value={r.run_id} className="bg-slate-800">
+                          Pipeline #{num}{time ? ` · ${time}` : ''} ({agents}/5 agents)
+                        </option>
+                      )
+                    })}
                   </select>
                     </div>
               )}

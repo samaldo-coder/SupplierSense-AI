@@ -73,34 +73,25 @@ function AppInner() {
         />
         <main className="pb-12">
           <Routes>
-            {/* Main dashboard — role-specific */}
+            {/* Role-specific dashboard — all tabs live inside each dashboard component */}
             <Route path="/dashboard" element={<DashboardRouter role={userRole} />} />
 
-            {/* Director-specific routes */}
-            <Route path="/analytics" element={<DirectorDashboard />} />
-
-            {/* QC Manager routes */}
-            <Route path="/review" element={<QCManagerDashboard />} />
-            <Route path="/processing" element={<QCManagerDashboard />} />
-
-            {/* Shared routes */}
-            <Route path="/shipments" element={<WarehouseDashboard />} />
-            <Route path="/suppliers" element={<DirectorDashboard />} />
-
-            {/* Settings placeholder */}
+            {/* Settings */}
             <Route
               path="/settings"
               element={
                 <div className="max-w-7xl mx-auto p-6">
                   <div className="glass-card p-12 text-center">
                     <h2 className="text-xl font-bold text-white mb-2">Settings</h2>
-                    <p className="text-gray-400">Settings page coming soon. Configure alert thresholds, notification preferences, and API keys.</p>
+                    <p className="text-gray-400">
+                      Settings coming soon — configure alert thresholds, notification preferences, and API keys.
+                    </p>
                   </div>
                 </div>
               }
             />
 
-            {/* Redirect root to dashboard */}
+            {/* Catch-all → dashboard */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

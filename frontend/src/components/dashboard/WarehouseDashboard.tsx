@@ -322,9 +322,6 @@ export default function WarehouseDashboard() {
                          'Auto-Approved & Executed'}
                       </h4>
                       <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
-                        {pipelineResult.run_id && (
-                          <div><span className="text-gray-400">Run ID:</span> <span className="text-white font-mono">{pipelineResult.run_id.slice(0, 16)}...</span></div>
-                        )}
                         {pipelineResult.composite_score != null && (
                           <div><span className="text-gray-400">Risk Score:</span> <span className={`font-bold ${
                             pipelineResult.composite_score >= 70 ? 'text-red-400' :

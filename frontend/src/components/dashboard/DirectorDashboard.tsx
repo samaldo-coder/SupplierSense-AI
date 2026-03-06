@@ -28,6 +28,12 @@ import {
 } from '../../api'
 import { useGlobalToast } from '../ui/Toast'
 
+// Format a run_id or timestamp into a short human label
+const fmt = (iso?: string) =>
+  iso
+    ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : ''
+
 export default function DirectorDashboard() {
   const toast = useGlobalToast()
   const [selectedTab, setSelectedTab] = useState('approvals')
@@ -101,7 +107,7 @@ export default function DirectorDashboard() {
     const history = state.history as Record<string, any> | undefined
 
     const supplierProfile = intake?.supplier_profile as Record<string, any> | undefined
-    const supplierName = supplierProfile?.supplier_name ?? intake?.supplier_id ?? 'Unknown'
+    const supplierName = supplierProfile?.supplier_name ?? 'Unknown Supplier'
 
     return {
       compositeScore: decision?.composite_score as number | undefined,
@@ -330,7 +336,7 @@ export default function DirectorDashboard() {
                             {detail.action.replace(/_/g, ' ')}
                           </span>
                         )}
-                        <span className="text-gray-400 text-sm font-mono">Run: {approval.run_id.slice(0, 12)}...</span>
+                        <span className="text-gray-400 text-sm">📅 {fmt(approval.created_at)}</span>
                       </div>
                       <p className="text-white mt-2">{approval.summary || 'Agent pipeline requires director approval'}</p>
                     </div>
@@ -400,7 +406,7 @@ export default function DirectorDashboard() {
                       <div className="text-sm text-white">
                         {recommendedSupplier
                           ? `${recommendedSupplier.supplier_name} (${recommendedSupplier.country}, ${recommendedSupplier.lead_time_days}d lead, $${recommendedSupplier.unit_cost})`
-                          : approval.recommended_supplier_id}
+                          : 'Unknown supplier'}
                       </div>
                     </div>
                   )}
@@ -469,18 +475,20 @@ export default function DirectorDashboard() {
                 <div className="glass-card p-6">
                   <h3 className="text-lg font-semibold text-white mb-4">Decision History</h3>
                   <div className="space-y-3">
-                    {decidedApprovals.map(a => (
+                    {decidedApprovals.map((a, idx) => (
                       <div key={a.approval_id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                        <div>
-                          <span className="text-sm text-white font-mono">{a.run_id.slice(0, 12)}...</span>
-                          <span className={`ml-3 px-2 py-1 rounded-full text-xs font-medium ${
+                        <div className="flex items-center space-x-3">
+                          <span className="text-sm text-white font-medium">
+                            Pipeline #{decidedApprovals.length - idx}
+                          </span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             a.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'
                           }`}>
                             {a.status}
                           </span>
                         </div>
                         <div className="text-sm text-gray-400">
-                          {a.decided_at ? new Date(a.decided_at).toLocaleString() : ''}
+                          {fmt(a.decided_at ?? a.created_at)}
                         </div>
                       </div>
                     ))}
@@ -512,9 +520,11 @@ export default function DirectorDashboard() {
               >
                 <div className="flex justify-between items-center mb-4">
                   <div>
-                    <span className="font-mono text-white">{run.run_id.slice(0, 16)}...</span>
+                    <span className="text-white font-semibold">
+                      Pipeline #{pipelineRuns.length - idx}
+                    </span>
                     <span className="ml-3 text-sm text-gray-400">
-                      {run.agents_completed.length}/{agentStepNames.length} agents complete
+                      {fmt(run.started_at)} · {run.agents_completed.length}/{agentStepNames.length} agents
                     </span>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -614,7 +624,7 @@ export default function DirectorDashboard() {
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex items-center space-x-2">
-                      <span className="text-white font-medium">{supplier?.supplier_name || e.supplier_id}</span>
+                      <span className="text-white font-medium">{supplier?.supplier_name || 'Unknown Supplier'}</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                         e.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-300' :
                         e.severity === 'HIGH' ? 'bg-orange-500/20 text-orange-300' :
